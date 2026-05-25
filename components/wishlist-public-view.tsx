@@ -30,7 +30,13 @@ type AcquireResponse = {
   error?: string;
 };
 
-export function WishlistPublicView({ data }: { data: WishlistData }) {
+export function WishlistPublicView({
+  data,
+  canonicalPath = `/w/${data.wishlist.slug}`,
+}: {
+  data: WishlistData;
+  canonicalPath?: string;
+}) {
   const [items, setItems] = useState(data.items);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [email, setEmail] = useState("");
@@ -78,7 +84,7 @@ export function WishlistPublicView({ data }: { data: WishlistData }) {
         setEmail(result.follower.email);
 
         if (tokenFromUrl) {
-          window.history.replaceState(null, "", `/w/${data.wishlist.slug}`);
+          window.history.replaceState(null, "", canonicalPath);
         }
       } catch {
         window.localStorage.removeItem(storageKey);
@@ -86,7 +92,7 @@ export function WishlistPublicView({ data }: { data: WishlistData }) {
     }
 
     hydrateFollower();
-  }, [data.wishlist.slug, storageKey]);
+  }, [canonicalPath, data.wishlist.slug, storageKey]);
 
   async function handleFollow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

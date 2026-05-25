@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminWishlistPanel } from "@/components/admin-wishlist-panel";
+import { getWishlistPublicPath } from "@/lib/config";
 import { getWishlistDataByAdminToken } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -22,18 +23,24 @@ export default async function AdminPage({
           </p>
           <h1 className="mt-2 text-2xl font-black text-neutral-950">Link admin invalido</h1>
           <p className="mt-3 text-sm leading-6 text-neutral-600">
-            O painel de edicao precisa do link secreto gerado na criacao da wishlist.
+            O painel de edicao precisa do link secreto da sua wishlist.
           </p>
           <Link
             href="/"
             className="mt-5 inline-flex h-11 items-center justify-center rounded-lg bg-neutral-950 px-4 text-sm font-bold text-white"
           >
-            Criar nova wishlist
+            Abrir wishlist
           </Link>
         </div>
       </main>
     );
   }
 
-  return <AdminWishlistPanel data={data} adminToken={adminToken} />;
+  return (
+    <AdminWishlistPanel
+      data={data}
+      adminToken={adminToken}
+      publicPath={getWishlistPublicPath(data.wishlist.slug)}
+    />
+  );
 }

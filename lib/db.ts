@@ -1,7 +1,8 @@
 import postgres from "postgres";
 
+import { getPrimaryWishlistSlug } from "@/lib/config";
 import { PublicError } from "@/lib/errors";
-import { makeShortToken, makeToken, slugify } from "@/lib/tokens";
+import { makeToken } from "@/lib/tokens";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -139,40 +140,6 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-export async function createWishlist(input: { title: string; ownerName?: string | null }) {
-  const sql = getSql();
-  const title = input.title.trim() || "Minha wishlist";
-  const ownerName = input.ownerName?.trim() || null;
-  const baseSlug = slugify(title);
-  const adminToken = makeToken("admin");
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const slug = `${baseSlug}-${makeShortToken()}`;
-
-    try {
-      const [row] = await sql<WishlistRow[]>`
-        insert into wishlists (title, owner_name, slug, admin_token)
-        values (${title}, ${ownerName}, ${slug}, ${adminToken})
-        returning
-          id,
-          title,
-          owner_name as "ownerName",
-          slug,
-          admin_token as "adminToken",
-          created_at as "createdAt"
-      `;
-
-      return toWishlist(row);
-    } catch (error) {
-      if (attempt === 4) {
-        throw error;
-      }
-    }
-  }
-
-  throw new PublicError("Nao foi possivel criar um link unico para a wishlist.", 500);
-}
-
 export async function getWishlistDataBySlug(slug: string): Promise<WishlistData | null> {
   const sql = getSql();
   const [wishlistRow] = await sql<WishlistRow[]>`
@@ -203,6 +170,22 @@ export async function getWishlistDataBySlug(slug: string): Promise<WishlistData 
     items,
     categories: getCategories(items),
     followersCount: count,
+  };
+}
+
+export async function getPrimaryWishlistData() {
+  const slug = getPrimaryWishlistSlug();
+
+  if (!slug) {
+    return {
+      slug: null,
+      data: null,
+    };
+  }
+
+  return {
+    slug,
+    data: await getWishlistDataBySlug(slug),
   };
 }
 

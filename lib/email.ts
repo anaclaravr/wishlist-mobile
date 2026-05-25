@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 
+import { getWishlistPublicPath } from "@/lib/config";
 import type { Follower, PublicWishlist, Wishlist, WishlistItem } from "@/lib/db";
 import { formatPrice } from "@/lib/format";
 
@@ -30,8 +31,13 @@ function getResend() {
   return resend;
 }
 
-export function getFollowUrl(wishlist: Pick<PublicWishlist, "slug">, follower: Pick<Follower, "followToken">) {
-  return `${getBaseUrl()}/w/${wishlist.slug}?follow=${encodeURIComponent(follower.followToken)}`;
+export function getFollowUrl(
+  wishlist: Pick<PublicWishlist, "slug">,
+  follower: Pick<Follower, "followToken">,
+) {
+  const publicPath = getWishlistPublicPath(wishlist.slug);
+
+  return `${getBaseUrl()}${publicPath}?follow=${encodeURIComponent(follower.followToken)}`;
 }
 
 export async function sendFollowerWelcomeEmail(input: {

@@ -30,9 +30,11 @@ type AddItemResponse = {
 export function AdminWishlistPanel({
   data,
   adminToken,
+  publicPath,
 }: {
   data: AdminData;
   adminToken: string;
+  publicPath: string;
 }) {
   const [items, setItems] = useState(data.items);
   const [name, setName] = useState("");
@@ -43,9 +45,6 @@ export function AdminWishlistPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const publicPath = `/w/${data.wishlist.slug}`;
-  const publicUrl =
-    typeof window === "undefined" ? publicPath : `${window.location.origin}${publicPath}`;
   const categories = useMemo(
     () =>
       Array.from(new Set([...data.categories, ...items.map((item) => item.category), "Geral"]))
@@ -58,10 +57,10 @@ export function AdminWishlistPanel({
     setError(null);
 
     try {
-      await navigator.clipboard.writeText(publicUrl);
+      await navigator.clipboard.writeText(`${window.location.origin}${publicPath}`);
       setMessage("Link publico copiado.");
     } catch {
-      setError(publicUrl);
+      setError(publicPath);
     }
   }
 
