@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "db:migrate": "node scripts/migrate.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "db:seed": "node --env-file=.env.local scripts/seed.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

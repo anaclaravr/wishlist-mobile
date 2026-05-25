@@ -80,6 +80,7 @@ function getSql() {
     client = postgres(databaseUrl, {
       max: 5,
       ssl: isLocal ? undefined : "require",
+      prepare: false,
     });
   }
 

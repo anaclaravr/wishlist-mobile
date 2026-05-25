@@ -15,6 +15,7 @@ const isLocal =
 const sql = postgres(databaseUrl, {
   max: 1,
   ssl: isLocal ? undefined : "require",
+  prepare: false,
 });
 
 await sql`create extension if not exists pgcrypto`;
