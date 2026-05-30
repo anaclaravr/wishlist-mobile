@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       follower: {
+        id: follower.id,
         email: follower.email,
         followToken: follower.followToken,
       },

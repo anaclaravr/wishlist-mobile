@@ -1,8 +1,8 @@
 # Wishlist Mobile-First Compartilhavel
 
 App em Next.js para uma wishlist unica e mobile-first, com pagina publica em `/`, link admin
-secreto, itens com preco/categoria/link de compra, acompanhamento por e-mail e notificacao quando
-um novo item e adicionado.
+secreto, itens com preco/categoria/prioridade/imagem/link de compra, acompanhamento por e-mail e
+notificacao quando um novo item e adicionado.
 
 ## Stack
 
@@ -50,10 +50,11 @@ npm run dev
 ## Fluxos principais
 
 - `/` mostra a wishlist principal configurada em `WISHLIST_SLUG`.
-- `/admin/[adminToken]` adiciona itens e copia o link publico.
+- `/admin/[adminToken]` adiciona, edita, arquiva, restaura e exclui itens, alem de copiar o link publico.
 - `/w/[slug]` continua funcionando como compatibilidade para links antigos.
 - Visitantes informam e-mail para acompanhar; o token fica salvo no navegador e tambem e enviado por e-mail.
 - Somente seguidores com token valido conseguem marcar um item como adquirido.
+- Quem marcou um item como adquirido pode desfazer a marcacao.
 
 ## Deploy na Vercel
 

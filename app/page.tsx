@@ -1,7 +1,11 @@
 import { AlertCircle } from "lucide-react";
 
-import { WishlistPublicView } from "@/components/wishlist-public-view";
-import { getPrimaryWishlistData } from "@/lib/db";
+import { WishlistAccessGate } from "@/components/wishlist-access-gate";
+import { WishlistAppView } from "@/components/wishlist-app-view";
+import { getPrimaryWishlistSlug } from "@/lib/config";
+import { getWishlistDataBySlug } from "@/lib/db";
+import { getCurrentAccessSession } from "@/lib/access-session";
+import { hasPermission } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -13,23 +17,25 @@ function WishlistSetupError({
   description: string;
 }) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
-      <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-soft">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+    <main className="min-h-screen px-3 py-4 sm:px-6 sm:py-8">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[980px] items-center justify-center rounded-[30px] border border-[#d8deea] bg-[#f8f9fd] p-6 shadow-[0_34px_80px_rgba(27,36,54,0.12)] sm:p-10">
+        <div className="w-full max-w-lg rounded-2xl border border-[#d8deea] bg-white p-6 shadow-[0_18px_35px_rgba(27,36,54,0.08)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fde9cf] text-[#8e5b12]">
           <AlertCircle aria-hidden="true" className="h-6 w-6" />
+          </div>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#8a92a7]">
+            Wishlist
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">{title}</h1>
+          <p className="mt-3 text-sm leading-6 text-[#666f85]">{description}</p>
         </div>
-        <p className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-orange-700">
-          Wishlist
-        </p>
-        <h1 className="mt-2 text-2xl font-black text-neutral-950">{title}</h1>
-        <p className="mt-3 text-sm leading-6 text-neutral-600">{description}</p>
       </div>
     </main>
   );
 }
 
 export default async function HomePage() {
-  const { slug, data } = await getPrimaryWishlistData();
+  const slug = getPrimaryWishlistSlug();
 
   if (!slug) {
     return (
@@ -40,6 +46,14 @@ export default async function HomePage() {
     );
   }
 
+  const session = await getCurrentAccessSession();
+
+  if (!session || session.wishlistSlug !== slug || !hasPermission(session.role, "wishlist.read")) {
+    return <WishlistAccessGate slug={slug} />;
+  }
+
+  const data = await getWishlistDataBySlug(slug);
+
   if (!data) {
     return (
       <WishlistSetupError
@@ -49,5 +63,14 @@ export default async function HomePage() {
     );
   }
 
-  return <WishlistPublicView data={data} canonicalPath="/" />;
+  return (
+    <WishlistAppView
+      data={data}
+      canonicalPath="/"
+      access={{
+        role: session.role,
+        permissions: session.permissions,
+      }}
+    />
+  );
 }

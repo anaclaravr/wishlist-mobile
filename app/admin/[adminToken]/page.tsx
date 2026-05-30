@@ -1,8 +1,7 @@
 import Link from "next/link";
 
-import { AdminWishlistPanel } from "@/components/admin-wishlist-panel";
-import { getWishlistPublicPath } from "@/lib/config";
-import { getWishlistDataByAdminToken } from "@/lib/db";
+import { AdminBootstrapLogin } from "@/components/admin-bootstrap-login";
+import { bootstrapAdminProfileByToken } from "@/lib/access-db";
 
 export const dynamic = "force-dynamic";
 
@@ -12,35 +11,31 @@ export default async function AdminPage({
   params: Promise<{ adminToken: string }>;
 }) {
   const { adminToken } = await params;
-  const data = await getWishlistDataByAdminToken(adminToken);
+  const data = await bootstrapAdminProfileByToken(adminToken).catch(() => null);
 
   if (!data) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
-        <div className="rounded-lg border border-neutral-200 bg-white p-5 shadow-soft">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-orange-700">
-            Admin
-          </p>
-          <h1 className="mt-2 text-2xl font-black text-neutral-950">Link admin invalido</h1>
-          <p className="mt-3 text-sm leading-6 text-neutral-600">
-            O painel de edicao precisa do link secreto da sua wishlist.
-          </p>
-          <Link
-            href="/"
-            className="mt-5 inline-flex h-11 items-center justify-center rounded-lg bg-neutral-950 px-4 text-sm font-bold text-white"
-          >
-            Abrir wishlist
-          </Link>
+      <main className="min-h-screen bg-[#f8f9fd] px-4 py-6 sm:px-6">
+        <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[980px] items-center justify-center">
+          <div className="w-full max-w-lg rounded-[24px] border border-[#d8deea] bg-white p-6 shadow-[0_18px_35px_rgba(27,36,54,0.08)]">
+            <p className="text-[11px] font-medium uppercase text-[#8a92a7]">
+              Admin
+            </p>
+            <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">Link admin invalido</h1>
+            <p className="mt-3 text-sm leading-6 text-[#666f85]">
+              O painel de edicao precisa do link secreto da sua wishlist.
+            </p>
+            <Link
+              href="/"
+              className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[#141a28] px-4 text-sm font-medium text-white"
+            >
+              Abrir wishlist
+            </Link>
+          </div>
         </div>
       </main>
     );
   }
 
-  return (
-    <AdminWishlistPanel
-      data={data}
-      adminToken={adminToken}
-      publicPath={getWishlistPublicPath(data.wishlist.slug)}
-    />
-  );
+  return <AdminBootstrapLogin adminToken={adminToken} wishlistTitle={data.wishlist.title} />;
 }

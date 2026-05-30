@@ -7,7 +7,7 @@ import { getErrorResponse, PublicError } from "@/lib/errors";
 
 const followSchema = z.object({
   slug: z.string().trim().min(1),
-  email: z.string().trim().email("Informe um e-mail valido."),
+  email: z.string().trim().email("Informe um e-mail valido.").optional(),
 });
 
 export async function POST(request: Request) {
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       follower: {
+        id: result.follower.id,
         email: result.follower.email,
         followToken: result.follower.followToken,
       },

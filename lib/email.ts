@@ -46,6 +46,11 @@ export async function sendFollowerWelcomeEmail(input: {
 }) {
   const client = getResend();
   const from = process.env.EMAIL_FROM;
+  const followerEmail = input.follower.email;
+
+  if (!followerEmail) {
+    return { skipped: true };
+  }
 
   if (!client || !from) {
     console.info("Email skipped: configure RESEND_API_KEY and EMAIL_FROM.");
@@ -57,7 +62,7 @@ export async function sendFollowerWelcomeEmail(input: {
 
   await client.emails.send({
     from,
-    to: input.follower.email,
+    to: followerEmail,
     subject: `Voce esta acompanhando ${input.wishlist.title}`,
     html: `
       <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
@@ -79,9 +84,12 @@ export async function sendNewItemEmail(input: {
 }) {
   const client = getResend();
   const from = process.env.EMAIL_FROM;
+  const followersWithEmail = input.followers.filter(
+    (follower): follower is Follower & { email: string } => Boolean(follower.email),
+  );
 
-  if (!client || !from || input.followers.length === 0) {
-    if (input.followers.length > 0) {
+  if (!client || !from || followersWithEmail.length === 0) {
+    if (followersWithEmail.length > 0) {
       console.info("New item email skipped: configure RESEND_API_KEY and EMAIL_FROM.");
     }
 
@@ -97,7 +105,7 @@ export async function sendNewItemEmail(input: {
   const price = formatPrice(input.item.priceCents, input.item.currency);
 
   const results = await Promise.allSettled(
-    input.followers.map((follower) => {
+    followersWithEmail.map((follower) => {
       const followUrl = getFollowUrl(input.wishlist, follower);
 
       return client.emails.send({
