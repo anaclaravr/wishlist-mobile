@@ -1,29 +1,75 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useMemo, useRef, useState } from "react";
 import {
+  FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrowDownUp,
+  BookOpen,
+  Briefcase,
   CalendarClock,
   CheckCircle2,
-  ChevronDown,
+  ChevronRight,
   Circle,
+  Filter,
+  Flag,
+  Grid2X2,
+  Layers3,
+  List,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
-  SlidersHorizontal,
+  Tag,
   Trash2,
-  X,
+  UserRound,
 } from "lucide-react";
 
-import { CommonButton, IconButton } from "@/components/ui/button-system";
+import {
+  CommonButton,
+  IconButton,
+  ListBox,
+  MenuIconButton,
+  SwitchButton,
+  Toolbar,
+  ToolbarItem,
+} from "@/components/ui/button-system";
 import { Chip } from "@/components/ui/chip";
-import { Drawer } from "@/components/ui/drawer";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { Drawer, DrawerFieldRow, DrawerSection } from "@/components/ui/drawer";
+import { RichTextEditor, type RichTextBlock } from "@/components/ui/rich-text-editor";
+import { Tabs } from "@/components/ui/tabs";
 import type { TaskPageSettings } from "@/lib/task-page-settings";
+
+function cx(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
+}
+
+function propertyLabel(icon: ReactNode, label: string) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="text-[#7a8398]">{icon}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
 
 type AdminTaskStatus = "pending" | "in_progress" | "done";
 type AdminTaskPriority = "low" | "medium" | "high" | null;
+type AdminTaskCategory = "trabalho" | "estudos" | "pessoal";
 type PriorityFilter = "all" | "high" | "medium" | "low";
+type DueFilter = "all" | "overdue" | "today" | "upcoming" | "none";
 type SortMode = "updated_desc" | "due_asc" | "priority_desc";
+type TaskTab = "all" | AdminTaskStatus;
+type ViewMode = "board" | "list";
+type FilterPanelKey = "priority" | "due";
 
 type AdminTask = {
   id: string;
@@ -31,6 +77,7 @@ type AdminTask = {
   notes: string | null;
   status: AdminTaskStatus;
   priority: AdminTaskPriority;
+  category: AdminTaskCategory;
   tags: string[];
   dueAt: string | null;
   createdByProfileId: string | null;
@@ -51,21 +98,88 @@ type TasksResponse = {
 
 type TaskForm = {
   title: string;
-  notes: string;
+  notes: RichTextBlock[];
   status: AdminTaskStatus;
   priority: AdminTaskPriority;
+  category: AdminTaskCategory;
   dueAt: string;
   tags: string[];
 };
 
-const defaultTaskForm: TaskForm = {
-  title: "",
-  notes: "",
-  status: "pending",
-  priority: null,
-  dueAt: "",
-  tags: [],
+type FilterState = {
+  priority: PriorityFilter;
+  due: DueFilter;
 };
+
+const RICH_TEXT_NOTES_PREFIX = "__rich_text__:";
+
+const defaultFilterState: FilterState = {
+  priority: "all",
+  due: "all",
+};
+
+const statusOptions: ComboboxOption[] = [
+  {
+    value: "pending",
+    label: "Pendente",
+    icon: <Circle aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "warning",
+  },
+  {
+    value: "in_progress",
+    label: "Em andamento",
+    icon: <Loader2 aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "secondary",
+  },
+  {
+    value: "done",
+    label: "Concluida",
+    icon: <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "success",
+  },
+];
+
+const priorityOptions: ComboboxOption[] = [
+  {
+    value: "low",
+    label: "Baixa",
+    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "tertiary",
+  },
+  {
+    value: "medium",
+    label: "Media",
+    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "warning",
+  },
+  {
+    value: "high",
+    label: "Alta",
+    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "destructive",
+  },
+];
+
+const categoryOptions: ComboboxOption[] = [
+  {
+    value: "trabalho",
+    label: "Trabalho",
+    icon: <Briefcase aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "info",
+  },
+  {
+    value: "estudos",
+    label: "Estudos",
+    icon: <BookOpen aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "warning",
+  },
+  {
+    value: "pessoal",
+    label: "Pessoal",
+    icon: <UserRound aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "secondary",
+  },
+];
 
 function toDateInputValue(value: string | null) {
   if (!value) return "";
@@ -84,26 +198,229 @@ function formatDueDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(new Date(value));
 }
 
+function formatCreatedDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  }).format(new Date(value));
+}
+
 function dueStatus(dueAt: string | null) {
-  if (!dueAt) return "none";
+  if (!dueAt) return "none" as const;
   const today = new Date();
   const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const due = new Date(dueAt);
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
-  if (dueDay < startToday) return "overdue";
-  if (dueDay === startToday) return "today";
-  return "future";
+  if (dueDay < startToday) return "overdue" as const;
+  if (dueDay === startToday) return "today" as const;
+  return "future" as const;
 }
 
 function taskToForm(task: AdminTask): TaskForm {
   return {
     title: task.title,
-    notes: task.notes ?? "",
+    notes: deserializeTaskNotes(task.notes),
     status: task.status,
     priority: task.priority,
+    category: task.category,
     dueAt: toDateInputValue(task.dueAt),
     tags: task.tags ?? [],
   };
+}
+
+function createEmptyNoteBlock(): RichTextBlock {
+  return { id: `block-${crypto.randomUUID()}`, type: "paragraph", text: "" };
+}
+
+function createDefaultTaskForm(): TaskForm {
+  return {
+    title: "",
+    notes: [createEmptyNoteBlock()],
+    status: "pending",
+    priority: null,
+    category: "pessoal",
+    dueAt: "",
+    tags: [],
+  };
+}
+
+function deserializeTaskNotes(value: string | null): RichTextBlock[] {
+  const fallback = [createEmptyNoteBlock()];
+  if (!value?.trim()) {
+    return fallback;
+  }
+
+  if (value.startsWith(RICH_TEXT_NOTES_PREFIX)) {
+    try {
+      const parsed = JSON.parse(value.slice(RICH_TEXT_NOTES_PREFIX.length)) as RichTextBlock[];
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return fallback;
+      }
+      return parsed.map((block) => ({
+        id: typeof block.id === "string" && block.id ? block.id : `block-${crypto.randomUUID()}`,
+        type: block.type,
+        text: typeof block.text === "string" ? block.text : "",
+      }));
+    } catch {
+      return fallback;
+    }
+  }
+
+  return [
+    {
+      id: `block-${crypto.randomUUID()}`,
+      type: "paragraph",
+      text: value,
+    },
+  ];
+}
+
+function serializeTaskNotes(blocks: RichTextBlock[]) {
+  const sanitized = blocks
+    .map((block) => ({
+      id: block.id || `block-${crypto.randomUUID()}`,
+      type: block.type,
+      text: block.text ?? "",
+    }))
+    .filter((block) => block.type === "divider" || block.text.trim().length > 0);
+
+  if (sanitized.length === 0) {
+    return null;
+  }
+
+  return `${RICH_TEXT_NOTES_PREFIX}${JSON.stringify(sanitized)}`;
+}
+
+function summarizeTaskNotes(value: string | null) {
+  if (!value?.trim()) {
+    return "";
+  }
+
+  const blocks = deserializeTaskNotes(value);
+  return blocks
+    .filter((block) => block.type !== "divider" && block.text.trim())
+    .map((block) => block.type === "bullet" ? `• ${block.text.trim()}` : block.text.trim())
+    .join(" ")
+    .trim();
+}
+
+function statusLabel(status: AdminTaskStatus) {
+  if (status === "pending") return "Pendente";
+  if (status === "in_progress") return "Em andamento";
+  return "Concluida";
+}
+
+function priorityLabel(priority: AdminTaskPriority) {
+  if (priority === "high") return "Alta";
+  if (priority === "medium") return "Media";
+  if (priority === "low") return "Baixa";
+  return "Sem prioridade";
+}
+
+function categoryLabel(category: AdminTaskCategory) {
+  if (category === "trabalho") return "Trabalho";
+  if (category === "estudos") return "Estudos";
+  return "Pessoal";
+}
+
+function statusIcon(status: AdminTaskStatus, className = "h-4 w-4") {
+  if (status === "pending") {
+    return <Circle aria-hidden="true" className={className} />;
+  }
+  if (status === "in_progress") {
+    return <Loader2 aria-hidden="true" className={className} />;
+  }
+  return <CheckCircle2 aria-hidden="true" className={className} />;
+}
+
+function priorityIcon(priority: AdminTaskPriority, className = "h-4 w-4") {
+  if (!priority) {
+    return <Flag aria-hidden="true" className={className} />;
+  }
+  return <Flag aria-hidden="true" className={className} />;
+}
+
+function categoryIcon(category: AdminTaskCategory, className = "h-4 w-4") {
+  if (category === "trabalho") {
+    return <Briefcase aria-hidden="true" className={className} />;
+  }
+  if (category === "estudos") {
+    return <BookOpen aria-hidden="true" className={className} />;
+  }
+  return <UserRound aria-hidden="true" className={className} />;
+}
+
+function statusChip(taskStatus: AdminTaskStatus) {
+  return (
+    <Chip
+      label={statusLabel(taskStatus)}
+      type={taskStatus === "done" ? "success" : taskStatus === "in_progress" ? "secondary" : "warning"}
+      showIconLeft
+      iconLeft={statusIcon(taskStatus, "h-3.5 w-3.5")}
+    />
+  );
+}
+
+function priorityChip(priority: AdminTaskPriority) {
+  if (!priority) return null;
+  return (
+    <Chip
+      label={priorityLabel(priority)}
+      type={priority === "high" ? "destructive" : priority === "medium" ? "warning" : "tertiary"}
+      showIconLeft
+      iconLeft={priorityIcon(priority, "h-3.5 w-3.5")}
+    />
+  );
+}
+
+function dueChip(dueAt: string | null) {
+  if (!dueAt) return null;
+  const status = dueStatus(dueAt);
+  return (
+    <Chip
+      label={status === "today" ? "Vence hoje" : status === "overdue" ? "Atrasada" : formatDueDate(dueAt)}
+      type={status === "overdue" ? "destructive" : status === "today" ? "warning" : "info"}
+      showIconLeft
+      iconLeft={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
+    />
+  );
+}
+
+function categoryChip(category: AdminTaskCategory) {
+  return (
+    <Chip
+      label={categoryLabel(category)}
+      type={category === "trabalho" ? "info" : category === "estudos" ? "warning" : "secondary"}
+      showIconLeft
+      iconLeft={categoryIcon(category, "h-3.5 w-3.5")}
+    />
+  );
+}
+
+function matchesFilters(task: AdminTask, filters: FilterState) {
+  if (filters.priority !== "all" && task.priority !== filters.priority) {
+    return false;
+  }
+
+  if (filters.due === "all") {
+    return true;
+  }
+
+  const status = dueStatus(task.dueAt);
+  if (filters.due === "upcoming") {
+    return status === "future";
+  }
+  if (filters.due === "none") {
+    return status === "none";
+  }
+  return status === filters.due;
+}
+
+function isInteractiveTaskTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? Boolean(target.closest("[data-task-interactive], a, button, input, select, textarea, label"))
+    : false;
 }
 
 export function AdminTasksBoard({
@@ -117,25 +434,45 @@ export function AdminTasksBoard({
   const [searchDraft, setSearchDraft] = useState("");
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilterState);
+  const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilterState);
+  const [activeFilterPanel, setActiveFilterPanel] = useState<FilterPanelKey | null>(null);
+  const [activeFilterPanelOffset, setActiveFilterPanelOffset] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("updated_desc");
+  const [activeTab, setActiveTab] = useState<TaskTab>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("board");
   const [page, setPage] = useState(initialData.pagination.page);
   const [totalPages, setTotalPages] = useState(initialData.pagination.totalPages);
-  const [total, setTotal] = useState(initialData.pagination.total);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [form, setForm] = useState<TaskForm>(defaultTaskForm);
-  const [tagDraft, setTagDraft] = useState("");
+  const [form, setForm] = useState<TaskForm>(createDefaultTaskForm);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
+  const [isSortPopoverOpen, setIsSortPopoverOpen] = useState(false);
   const openerRef = useRef<HTMLElement | null>(null);
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const sortPopoverRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const tagOptions = useMemo<ComboboxOption[]>(
+    () =>
+      Array.from(new Set(tasks.flatMap((task) => task.tags)))
+        .sort((a, b) => a.localeCompare(b))
+        .map((tag) => ({
+          value: tag,
+          label: tag,
+          icon: <Tag aria-hidden="true" className="h-3.5 w-3.5" />,
+          chipType: "tertiary",
+        })),
+    [tasks],
+  );
 
   const filteredAndSortedTasks = useMemo(() => {
-    const filtered =
-      priorityFilter === "all" ? tasks : tasks.filter((task) => task.priority === priorityFilter);
+    const filtered = tasks.filter((task) => matchesFilters(task, appliedFilters));
 
     const priorityWeight: Record<Exclude<AdminTaskPriority, null>, number> = {
       high: 3,
@@ -147,14 +484,18 @@ export function AdminTasksBoard({
       if (sortMode === "priority_desc") {
         return (priorityWeight[b.priority ?? "low"] ?? 0) - (priorityWeight[a.priority ?? "low"] ?? 0);
       }
+
       if (sortMode === "due_asc") {
         const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
         const bDue = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        if (aDue !== bDue) return aDue - bDue;
+        if (aDue !== bDue) {
+          return aDue - bDue;
+        }
       }
+
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [priorityFilter, sortMode, tasks]);
+  }, [appliedFilters, sortMode, tasks]);
 
   const groupedTasks = useMemo(
     () => ({
@@ -165,9 +506,114 @@ export function AdminTasksBoard({
     [filteredAndSortedTasks],
   );
 
+  const visibleTasks = useMemo(() => {
+    if (activeTab === "all") {
+      return filteredAndSortedTasks;
+    }
+    return groupedTasks[activeTab];
+  }, [activeTab, filteredAndSortedTasks, groupedTasks]);
+
+  const priorityCounts = useMemo(
+    () => ({
+      all: tasks.length,
+      high: tasks.filter((task) => task.priority === "high").length,
+      medium: tasks.filter((task) => task.priority === "medium").length,
+      low: tasks.filter((task) => task.priority === "low").length,
+    }),
+    [tasks],
+  );
+
+  const dueCounts = useMemo(
+    () => ({
+      all: tasks.length,
+      overdue: tasks.filter((task) => dueStatus(task.dueAt) === "overdue").length,
+      today: tasks.filter((task) => dueStatus(task.dueAt) === "today").length,
+      upcoming: tasks.filter((task) => dueStatus(task.dueAt) === "future").length,
+      none: tasks.filter((task) => dueStatus(task.dueAt) === "none").length,
+    }),
+    [tasks],
+  );
+
+  const hasAppliedFilters =
+    appliedFilters.priority !== defaultFilterState.priority || appliedFilters.due !== defaultFilterState.due;
+  const hasDraftFilters =
+    draftFilters.priority !== defaultFilterState.priority || draftFilters.due !== defaultFilterState.due;
+  const hasPendingFilterChanges =
+    draftFilters.priority !== appliedFilters.priority || draftFilters.due !== appliedFilters.due;
+  const activeFilterCount =
+    Number(appliedFilters.priority !== defaultFilterState.priority) +
+    Number(appliedFilters.due !== defaultFilterState.due);
+
+  useEffect(() => {
+    if (!isFilterPopoverOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!filterPopoverRef.current || filterPopoverRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setDraftFilters(appliedFilters);
+      setIsFilterPopoverOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setDraftFilters(appliedFilters);
+        setIsFilterPopoverOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [appliedFilters, isFilterPopoverOpen]);
+
+  useEffect(() => {
+    if (!isSortPopoverOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!sortPopoverRef.current || sortPopoverRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setIsSortPopoverOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsSortPopoverOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isSortPopoverOpen]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [isSearchOpen]);
+
   async function loadTasks(nextPage: number, nextQuery = query) {
+    if (isLoading) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+
     try {
       const params = new URLSearchParams({
         page: String(nextPage),
@@ -177,11 +623,12 @@ export function AdminTasksBoard({
       });
       const response = await fetch(`/api/admin/tasks?${params.toString()}`);
       const result = (await response.json()) as TasksResponse & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Não foi possível carregar tarefas.");
+      if (!response.ok) {
+        throw new Error(result.error ?? "Nao foi possivel carregar tarefas.");
+      }
       setTasks(result.tasks ?? []);
       setPage(result.pagination.page);
       setTotalPages(result.pagination.totalPages);
-      setTotal(result.pagination.total);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
     } finally {
@@ -198,8 +645,7 @@ export function AdminTasksBoard({
   function openCreate(initialStatus?: AdminTaskStatus) {
     captureOpener();
     setEditingTaskId(null);
-    setForm({ ...defaultTaskForm, status: initialStatus ?? "pending" });
-    setTagDraft("");
+    setForm({ ...createDefaultTaskForm(), status: initialStatus ?? "pending" });
     setError(null);
     setIsDrawerOpen(true);
   }
@@ -208,7 +654,6 @@ export function AdminTasksBoard({
     captureOpener();
     setEditingTaskId(task.id);
     setForm(taskToForm(task));
-    setTagDraft("");
     setError(null);
     setIsDrawerOpen(true);
   }
@@ -216,27 +661,18 @@ export function AdminTasksBoard({
   function closeDrawer() {
     setIsDrawerOpen(false);
     setEditingTaskId(null);
-    setForm(defaultTaskForm);
-    setTagDraft("");
+    setForm(createDefaultTaskForm());
     openerRef.current?.focus();
-  }
-
-  function commitTag() {
-    const normalized = tagDraft.trim().slice(0, 32);
-    if (!normalized) return;
-    if (form.tags.includes(normalized) || form.tags.length >= 8) {
-      setTagDraft("");
-      return;
-    }
-    setForm((current) => ({ ...current, tags: [...current.tags, normalized] }));
-    setTagDraft("");
   }
 
   async function saveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = form.title.trim();
     if (!title) {
-      setError("Informe um título para a tarefa.");
+      setError("Informe um titulo para a tarefa.");
+      return;
+    }
+    if (pendingAction === "save") {
       return;
     }
 
@@ -247,9 +683,10 @@ export function AdminTasksBoard({
     try {
       const payload = {
         title,
-        notes: form.notes.trim() || null,
+        notes: serializeTaskNotes(form.notes),
         status: form.status,
         priority: form.priority,
+        category: form.category,
         tags: form.tags,
         dueAt: toIsoFromDateInput(form.dueAt),
       };
@@ -260,12 +697,12 @@ export function AdminTasksBoard({
       });
       const result = (await response.json()) as { task?: AdminTask; error?: string };
       if (!response.ok || !result.task) {
-        throw new Error(result.error ?? "Não foi possível salvar a tarefa.");
+        throw new Error(result.error ?? "Nao foi possivel salvar a tarefa.");
       }
 
       setMessage(editingTaskId ? "Tarefa atualizada." : "Tarefa criada.");
       closeDrawer();
-      await loadTasks(1);
+      await loadTasks(1, query);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
     } finally {
@@ -274,7 +711,10 @@ export function AdminTasksBoard({
   }
 
   async function setTaskStatus(task: AdminTask, status: AdminTaskStatus) {
-    if (task.status === status) return;
+    if (task.status === status || pendingAction === `status:${task.id}`) {
+      return;
+    }
+
     setPendingAction(`status:${task.id}`);
     setError(null);
     try {
@@ -285,7 +725,7 @@ export function AdminTasksBoard({
       });
       const result = (await response.json()) as { task?: AdminTask; error?: string };
       if (!response.ok || !result.task) {
-        throw new Error(result.error ?? "Não foi possível atualizar o status.");
+        throw new Error(result.error ?? "Nao foi possivel atualizar o status.");
       }
       setTasks((current) => current.map((item) => (item.id === task.id ? result.task! : item)));
     } catch (loadError) {
@@ -296,17 +736,23 @@ export function AdminTasksBoard({
   }
 
   async function deleteTask(task: AdminTask) {
-    if (!window.confirm(`Excluir a tarefa "${task.title}"?`)) return;
+    if (pendingAction === `delete:${task.id}`) {
+      return;
+    }
+    if (!window.confirm(`Excluir a tarefa "${task.title}"?`)) {
+      return;
+    }
+
     setPendingAction(`delete:${task.id}`);
     setError(null);
     try {
       const response = await fetch(`/api/admin/tasks/${task.id}`, { method: "DELETE" });
       const result = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) {
-        throw new Error(result.error ?? "Não foi possível excluir a tarefa.");
+        throw new Error(result.error ?? "Nao foi possivel excluir a tarefa.");
       }
-      setMessage("Tarefa excluída.");
-      await loadTasks(1);
+      setMessage("Tarefa excluida.");
+      await loadTasks(1, query);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
     } finally {
@@ -316,8 +762,15 @@ export function AdminTasksBoard({
 
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setQuery(searchDraft.trim());
-    await loadTasks(1, searchDraft);
+    const nextQuery = searchDraft.trim();
+    setQuery(nextQuery);
+    await loadTasks(1, nextQuery);
+  }
+
+  async function resetSearch() {
+    setSearchDraft("");
+    setQuery("");
+    await loadTasks(1, "");
   }
 
   async function onDropToColumn(status: AdminTaskStatus) {
@@ -328,387 +781,830 @@ export function AdminTasksBoard({
     await setTaskStatus(task, status);
   }
 
-  return (
-    <section className="space-y-3">
-      {message ? (
-        <p className="rounded-lg border border-[#bddfce] bg-[#e8f8ef] px-3 py-2 text-sm text-[#276348]">{message}</p>
-      ) : null}
-      {error ? (
-        <p className="rounded-lg border border-[#f2c5cc] bg-[#fdeef1] px-3 py-2 text-sm text-[#9a3042]">{error}</p>
-      ) : null}
+  function openFilterPopover() {
+    setDraftFilters(appliedFilters);
+    setActiveFilterPanel(null);
+    setActiveFilterPanelOffset(null);
+    setIsSortPopoverOpen(false);
+    setIsFilterPopoverOpen(true);
+  }
 
-      <div className="rounded-xl border border-[#dbe1ed] bg-white px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="mr-auto text-xl text-[#151b28]">Tarefas</h3>
-          <span className="rounded-full border border-[#d6ddeb] bg-white px-2 py-0.5 text-xs text-[#64708a]">
-            {total} tarefas
-          </span>
+  function openSortPopover() {
+    setDraftFilters(appliedFilters);
+    setActiveFilterPanel(null);
+    setActiveFilterPanelOffset(null);
+    setIsFilterPopoverOpen(false);
+    setIsSortPopoverOpen(true);
+  }
 
-          <div className="inline-flex items-center gap-1 rounded-lg border border-[#d7dfed] bg-[#fafbfd] px-1.5 py-1">
-            <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5 text-[#5f6a83]" />
-            <select
-              value={priorityFilter}
-              onChange={(event) => setPriorityFilter(event.target.value as PriorityFilter)}
-              className="h-7 border-0 bg-transparent px-1 text-xs text-[#4a556f] outline-none"
-              aria-label="Filtrar por prioridade"
-            >
-              <option value="all">Todas prioridades</option>
-              <option value="high">Prioridade alta</option>
-              <option value="medium">Prioridade média</option>
-              <option value="low">Prioridade baixa</option>
-            </select>
-            <select
-              value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="h-7 border-0 bg-transparent px-1 text-xs text-[#4a556f] outline-none"
-              aria-label="Ordenar tarefas"
-            >
-              <option value="updated_desc">Atualizadas recentemente</option>
-              <option value="due_asc">Vencimento próximo</option>
-              <option value="priority_desc">Maior prioridade</option>
-            </select>
+  function closeFilterPopover() {
+    setDraftFilters(appliedFilters);
+    setActiveFilterPanelOffset(null);
+    setIsFilterPopoverOpen(false);
+  }
+
+  function applyDraftFilters() {
+    setAppliedFilters(draftFilters);
+    setIsFilterPopoverOpen(false);
+  }
+
+  function resetDraftFilters() {
+    setDraftFilters(defaultFilterState);
+  }
+
+  function selectSortMode(nextSortMode: SortMode) {
+    setSortMode(nextSortMode);
+    setIsSortPopoverOpen(false);
+  }
+
+  function selectFilterPanel(panel: FilterPanelKey, trigger: HTMLButtonElement) {
+    const popover = trigger.closest("[data-filter-popover]");
+    if (popover instanceof HTMLElement) {
+      const triggerRect = trigger.getBoundingClientRect();
+      const popoverRect = popover.getBoundingClientRect();
+      setActiveFilterPanelOffset(triggerRect.top - popoverRect.top);
+    }
+    setActiveFilterPanel(panel);
+  }
+
+  function renderTags(tags: string[]) {
+    return tags.map((tag) => (
+      <Chip
+        key={tag}
+        label={tag}
+        type="tertiary"
+        surface="neutral"
+        showIconLeft
+        iconLeft={<Tag aria-hidden="true" className="h-3.5 w-3.5" />}
+      />
+    ));
+  }
+
+  function renderTaskMenu(task: AdminTask) {
+    return [
+      {
+        id: `edit:${task.id}`,
+        label: "Editar",
+        icon: <Pencil aria-hidden="true" className="h-4 w-4" />,
+        onSelect: () => openEdit(task),
+      },
+      ...(task.status !== "pending"
+        ? [
+            {
+              id: `move-pending:${task.id}`,
+              label: "Mover para Pendente",
+              icon: <Circle aria-hidden="true" className="h-4 w-4" />,
+              onSelect: () => void setTaskStatus(task, "pending"),
+            },
+          ]
+        : []),
+      ...(task.status !== "in_progress"
+        ? [
+            {
+              id: `move-progress:${task.id}`,
+              label: "Mover para Em andamento",
+              icon: <Loader2 aria-hidden="true" className="h-4 w-4" />,
+              onSelect: () => void setTaskStatus(task, "in_progress"),
+            },
+          ]
+        : []),
+      ...(task.status !== "done"
+        ? [
+            {
+              id: `move-done:${task.id}`,
+              label: "Mover para Concluida",
+              icon: <CheckCircle2 aria-hidden="true" className="h-4 w-4" />,
+              onSelect: () => void setTaskStatus(task, "done"),
+            },
+          ]
+        : []),
+      {
+        id: `delete:${task.id}`,
+        label: "Excluir",
+        icon: <Trash2 aria-hidden="true" className="h-4 w-4" />,
+        separatorBefore: true,
+        danger: true,
+        onSelect: () => void deleteTask(task),
+      },
+    ];
+  }
+
+  function renderTaskCard(task: AdminTask) {
+    const isStatusPending = pendingAction === `status:${task.id}`;
+    const notesSummary = summarizeTaskNotes(task.notes);
+
+    return (
+      <article
+        key={task.id}
+        draggable
+        onDragStart={() => setDraggingTaskId(task.id)}
+        onDragEnd={() => setDraggingTaskId(null)}
+        onClick={(event) => {
+          if (isInteractiveTaskTarget(event.target)) {
+            return;
+          }
+          openEdit(task);
+        }}
+        className={cx(
+          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition hover:border-[#c8d3e6]",
+          draggingTaskId === task.id && "border-[#93a6d3] opacity-75",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
+              {task.title || "Sem titulo"}
+            </h3>
+            <div className="inline-flex items-center gap-2 text-sm text-[#6f7890]">
+              <CalendarClock aria-hidden="true" className="h-4 w-4" />
+              <span>{task.dueAt ? formatDueDate(task.dueAt) : formatCreatedDate(task.createdAt)}</span>
+            </div>
           </div>
 
-          <form onSubmit={handleSearchSubmit} className="inline-flex items-center gap-1">
-            <button
+          <div className="-m-2 shrink-0 p-2" data-task-interactive>
+            <MenuIconButton
+              ariaLabel={`Abrir acoes de ${task.title || "tarefa"}`}
+              tooltip
+              dropdown={false}
+              buttonClassName="h-10 w-10 rounded-[10px]"
+              items={renderTaskMenu(task)}
+            >
+              <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+            </MenuIconButton>
+          </div>
+        </div>
+
+        {notesSummary ? <p className="line-clamp-3 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
+
+        <div className="flex flex-wrap gap-2">
+          {statusChip(task.status)}
+          {priorityChip(task.priority)}
+          {categoryChip(task.category)}
+          {dueChip(task.dueAt)}
+          {settings.showTags ? renderTags(task.tags.slice(0, 2)) : null}
+        </div>
+
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          <CommonButton
+            type="button"
+            onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
+            variant="secondary"
+            usage={task.status === "done" ? "general" : "info"}
+            showIconLeft
+            iconLeft={
+              isStatusPending ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : task.status === "done" ? (
+                <Circle aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              )
+            }
+            className="h-10 flex-1 justify-center"
+            title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
+            data-task-interactive
+          >
+            {task.status === "done" ? "Reabrir" : "Concluir"}
+          </CommonButton>
+        </div>
+      </article>
+    );
+  }
+
+  function renderTaskListItem(task: AdminTask) {
+    const isStatusPending = pendingAction === `status:${task.id}`;
+    const notesSummary = summarizeTaskNotes(task.notes);
+
+    return (
+      <article
+        key={task.id}
+        onClick={(event) => {
+          if (isInteractiveTaskTarget(event.target)) {
+            return;
+          }
+          openEdit(task);
+        }}
+        className="group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition hover:border-[#c8d3e6] sm:flex-row sm:items-start sm:justify-between"
+      >
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-2">
+            <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
+              {task.title || "Sem titulo"}
+            </h3>
+            <div className="inline-flex items-center gap-2 text-sm text-[#6f7890]">
+              <CalendarClock aria-hidden="true" className="h-4 w-4" />
+              <span>{task.dueAt ? formatDueDate(task.dueAt) : formatCreatedDate(task.createdAt)}</span>
+            </div>
+          </div>
+
+          {notesSummary ? <p className="line-clamp-2 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
+
+          <div className="flex flex-wrap gap-2">
+            {statusChip(task.status)}
+            {priorityChip(task.priority)}
+            {categoryChip(task.category)}
+            {dueChip(task.dueAt)}
+            {settings.showTags ? renderTags(task.tags) : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2" data-task-interactive>
+          <CommonButton
+            type="button"
+            onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
+            variant="secondary"
+            usage={task.status === "done" ? "general" : "info"}
+            showIconLeft
+            iconLeft={
+              isStatusPending ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : task.status === "done" ? (
+                <Circle aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              )
+            }
+            className="h-10 whitespace-nowrap px-4"
+            title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
+          >
+            {task.status === "done" ? "Reabrir" : "Concluir"}
+          </CommonButton>
+
+          <MenuIconButton
+            ariaLabel={`Abrir acoes de ${task.title || "tarefa"}`}
+            tooltip
+            dropdown={false}
+            buttonClassName="h-10 w-10 rounded-[10px]"
+            items={renderTaskMenu(task)}
+          >
+            <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+          </MenuIconButton>
+        </div>
+      </article>
+    );
+  }
+
+  const filterSections = [
+    {
+      id: "priority" as const,
+      label: "Prioridade",
+      icon: <Flag aria-hidden="true" className="h-5 w-5" />,
+      selectedCount: appliedFilters.priority === "all" ? 0 : 1,
+    },
+    {
+      id: "due" as const,
+      label: "Prazo",
+      icon: <CalendarClock aria-hidden="true" className="h-5 w-5" />,
+      selectedCount: appliedFilters.due === "all" ? 0 : 1,
+    },
+  ];
+
+  const activeFilterOptions = useMemo(() => {
+    if (activeFilterPanel === "priority") {
+      return [
+        {
+          id: "all",
+          label: "Todas",
+          selected: draftFilters.priority === "all",
+          onSelect: () => setDraftFilters((current) => ({ ...current, priority: "all" })),
+          count: priorityCounts.all,
+          icon: <Layers3 aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "high",
+          label: "Alta",
+          selected: draftFilters.priority === "high",
+          onSelect: () => setDraftFilters((current) => ({ ...current, priority: "high" })),
+          count: priorityCounts.high,
+          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "medium",
+          label: "Media",
+          selected: draftFilters.priority === "medium",
+          onSelect: () => setDraftFilters((current) => ({ ...current, priority: "medium" })),
+          count: priorityCounts.medium,
+          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "low",
+          label: "Baixa",
+          selected: draftFilters.priority === "low",
+          onSelect: () => setDraftFilters((current) => ({ ...current, priority: "low" })),
+          count: priorityCounts.low,
+          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+        },
+      ];
+    }
+
+    if (activeFilterPanel === "due") {
+      return [
+        {
+          id: "all",
+          label: "Todos",
+          selected: draftFilters.due === "all",
+          onSelect: () => setDraftFilters((current) => ({ ...current, due: "all" })),
+          count: dueCounts.all,
+          icon: <Layers3 aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "overdue",
+          label: "Atrasadas",
+          selected: draftFilters.due === "overdue",
+          onSelect: () => setDraftFilters((current) => ({ ...current, due: "overdue" })),
+          count: dueCounts.overdue,
+          icon: <CalendarClock aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "today",
+          label: "Vencem hoje",
+          selected: draftFilters.due === "today",
+          onSelect: () => setDraftFilters((current) => ({ ...current, due: "today" })),
+          count: dueCounts.today,
+          icon: <CalendarClock aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "upcoming",
+          label: "Proximas",
+          selected: draftFilters.due === "upcoming",
+          onSelect: () => setDraftFilters((current) => ({ ...current, due: "upcoming" })),
+          count: dueCounts.upcoming,
+          icon: <CalendarClock aria-hidden="true" className="h-4 w-4" />,
+        },
+        {
+          id: "none",
+          label: "Sem prazo",
+          selected: draftFilters.due === "none",
+          onSelect: () => setDraftFilters((current) => ({ ...current, due: "none" })),
+          count: dueCounts.none,
+          icon: <CalendarClock aria-hidden="true" className="h-4 w-4" />,
+        },
+      ];
+    }
+
+    return [];
+  }, [activeFilterPanel, draftFilters.due, draftFilters.priority, dueCounts, priorityCounts]);
+
+  const filterSectionListItems = filterSections.map((section) => ({
+    id: section.id,
+    label: section.label,
+    icon: section.icon,
+    selected: section.id === activeFilterPanel,
+    count: section.selectedCount || undefined,
+    endIcon: <ChevronRight aria-hidden="true" className="h-4 w-4" />,
+    onSelect: (event: ReactMouseEvent<HTMLButtonElement>) => selectFilterPanel(section.id, event.currentTarget),
+  }));
+
+  const activeFilterListItems = activeFilterOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    icon: option.icon,
+    count: option.count,
+    selected: option.selected,
+    onSelect: () => option.onSelect(),
+  }));
+
+  const sortListItems = [
+    {
+      id: "updated_desc",
+      label: "Atualizadas recentemente",
+      selected: sortMode === "updated_desc",
+      onSelect: () => selectSortMode("updated_desc"),
+    },
+    {
+      id: "due_asc",
+      label: "Vencimento proximo",
+      selected: sortMode === "due_asc",
+      onSelect: () => selectSortMode("due_asc"),
+    },
+    {
+      id: "priority_desc",
+      label: "Maior prioridade",
+      selected: sortMode === "priority_desc",
+      onSelect: () => selectSortMode("priority_desc"),
+    },
+  ];
+
+  const boardColumns =
+    activeTab === "all"
+      ? [
+          { status: "pending" as const, label: settings.columnLabels.pending, tasks: groupedTasks.pending },
+          { status: "in_progress" as const, label: settings.columnLabels.inProgress, tasks: groupedTasks.in_progress },
+          { status: "done" as const, label: settings.columnLabels.done, tasks: groupedTasks.done },
+        ]
+      : [
+          {
+            status: activeTab,
+            label:
+              activeTab === "pending"
+                ? settings.columnLabels.pending
+                : activeTab === "in_progress"
+                  ? settings.columnLabels.inProgress
+                  : settings.columnLabels.done,
+            tasks: groupedTasks[activeTab],
+          },
+        ];
+
+  return (
+    <section className="space-y-3">
+      <Tabs<TaskTab>
+        value={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            id: "all",
+            label: "Todas",
+            count: filteredAndSortedTasks.length,
+            icon: <Layers3 aria-hidden="true" className="h-5 w-5" />,
+          },
+          {
+            id: "pending",
+            label: settings.columnLabels.pending,
+            count: groupedTasks.pending.length,
+            icon: <Circle aria-hidden="true" className="h-5 w-5" />,
+          },
+          {
+            id: "in_progress",
+            label: settings.columnLabels.inProgress,
+            count: groupedTasks.in_progress.length,
+            icon: <Loader2 aria-hidden="true" className="h-5 w-5" />,
+          },
+          {
+            id: "done",
+            label: settings.columnLabels.done,
+            count: groupedTasks.done.length,
+            icon: <CheckCircle2 aria-hidden="true" className="h-5 w-5" />,
+          },
+        ]}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SwitchButton<ViewMode>
+          items={[
+            {
+              value: "board",
+              label: "",
+              ariaLabel: "Visualizacao em board",
+              icon: <Grid2X2 aria-hidden="true" className="h-4 w-4" />,
+            },
+            {
+              value: "list",
+              label: "",
+              ariaLabel: "Visualizacao em lista",
+              icon: <List aria-hidden="true" className="h-4 w-4" />,
+            },
+          ]}
+          value={viewMode}
+          onChange={setViewMode}
+          iconOnly
+        />
+
+        <Toolbar variant="ghost" className="flex-wrap justify-end">
+          <div ref={filterPopoverRef} className="relative inline-flex items-center">
+            <IconButton
               type="button"
-              onClick={() => setIsSearchOpen((current) => !current)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#55607a] hover:bg-[#f2f5fb]"
-              aria-label={isSearchOpen ? "Fechar busca" : "Abrir busca"}
+              onClick={() => {
+                if (isFilterPopoverOpen) {
+                  closeFilterPopover();
+                  return;
+                }
+                openFilterPopover();
+              }}
+              variant={hasAppliedFilters ? "info" : "secondary"}
+              selected={hasAppliedFilters}
+              aria-label="Abrir filtros"
+              title="Abrir filtros"
             >
-              <Search aria-hidden="true" className="h-4 w-4" />
-            </button>
-            <div
-              className={`overflow-hidden transition-[width,opacity] duration-200 ${
-                isSearchOpen ? "w-[220px] opacity-100" : "w-0 opacity-0"
-              }`}
-            >
-              <label className="sr-only" htmlFor="tasks-search">
-                Buscar tarefas
-              </label>
+              <span className="relative inline-flex">
+                <Filter aria-hidden="true" className={cx("h-[18px] w-[18px]", hasAppliedFilters && "fill-current")} />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#f9cf5a] ring-2 ring-[#f8f9fd]" />
+                ) : null}
+              </span>
+            </IconButton>
+
+            {isFilterPopoverOpen ? (
+              <div
+                data-filter-popover
+                className="absolute left-0 top-[3.15rem] z-30 w-[min(350px,calc(100vw-2rem))] rounded-[24px] border border-[#d7ddea] bg-white shadow-[0_24px_50px_rgba(20,28,45,0.18)] sm:left-auto sm:right-0"
+              >
+                <div className="flex items-center justify-between border-b border-[#e6eaf3] px-4 py-3.5">
+                  <p className="text-[1.4rem] font-medium text-[#161d2c]">Filters</p>
+                  <button
+                    type="button"
+                    onClick={closeFilterPopover}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#5f687e] transition hover:bg-[#f1f4fa] hover:text-[#1f2738]"
+                    aria-label="Fechar filtros"
+                    title="Fechar filtros"
+                  >
+                    <Plus aria-hidden="true" className="h-4 w-4 rotate-45" />
+                  </button>
+                </div>
+
+                <div className="p-2">
+                  <ListBox
+                    items={filterSectionListItems}
+                    emptyLabel="Nenhum filtro encontrado."
+                    showSelectedCheck={false}
+                    ariaLabel="Filtros de tarefas"
+                  />
+                </div>
+
+                <div className="border-t border-[#e6eaf3] px-4 py-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <CommonButton
+                      type="button"
+                      onClick={() => {
+                        if (!hasDraftFilters) {
+                          return;
+                        }
+                        resetDraftFilters();
+                      }}
+                      variant="secondary"
+                      usage="general"
+                      title="Limpar filtros"
+                    >
+                      Reset
+                    </CommonButton>
+                    <CommonButton
+                      type="button"
+                      onClick={() => {
+                        if (!hasPendingFilterChanges) {
+                          return;
+                        }
+                        applyDraftFilters();
+                      }}
+                      variant="primary"
+                      usage="info"
+                      title="Aplicar filtros"
+                    >
+                      Apply
+                    </CommonButton>
+                  </div>
+                </div>
+
+                {activeFilterPanel ? (
+                  <div
+                    className="mt-2 border-t border-[#eceff6] px-4 pb-4 pt-3 md:absolute md:left-full md:mt-0 md:ml-3 md:w-[280px] md:rounded-[20px] md:border md:border-[#d7ddea] md:bg-white md:p-2 md:shadow-[0_16px_35px_rgba(20,28,45,0.15)]"
+                    style={activeFilterPanelOffset === null ? undefined : { top: activeFilterPanelOffset }}
+                  >
+                    <ListBox items={activeFilterListItems} ariaLabel="Opcoes do filtro de tarefas" />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <ToolbarItem>
+            <div ref={sortPopoverRef} className="relative inline-flex items-center">
+              <IconButton
+                type="button"
+                onClick={() => {
+                  if (isSortPopoverOpen) {
+                    setIsSortPopoverOpen(false);
+                    return;
+                  }
+                  openSortPopover();
+                }}
+                variant={sortMode !== "updated_desc" ? "info" : "secondary"}
+                selected={sortMode !== "updated_desc"}
+                aria-label="Abrir ordenacao"
+                title="Abrir ordenacao"
+              >
+                <ArrowDownUp aria-hidden="true" className="h-[18px] w-[18px]" />
+              </IconButton>
+
+              {isSortPopoverOpen ? (
+                <div className="absolute left-0 top-[3.15rem] z-30 w-[240px] rounded-[16px] border border-[#d7ddea] bg-white p-2 shadow-[var(--ds-shadow-soft)] sm:left-auto sm:right-0">
+                  <ListBox items={sortListItems} ariaLabel="Ordenacao de tarefas" />
+                </div>
+              ) : null}
+            </div>
+          </ToolbarItem>
+
+          <ToolbarItem
+            className={`h-10 overflow-hidden rounded-[10px] border transition-[width,border-color,background-color] duration-300 ${
+              isSearchOpen ? "w-[min(20rem,calc(100vw-7rem))] border-transparent bg-transparent" : "w-10 border-transparent bg-transparent"
+            }`}
+          >
+            <form onSubmit={handleSearchSubmit} className="flex h-full w-full items-center">
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen((currentState) => !currentState)}
+                className="ds-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] text-[#4a5570] transition hover:bg-[#f2f5fb] hover:text-[#1c2538] focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2"
+                aria-label={isSearchOpen ? "Ocultar busca" : "Abrir busca"}
+                title={isSearchOpen ? "Ocultar busca" : "Abrir busca"}
+              >
+                <Search aria-hidden="true" className="h-[18px] w-[18px]" />
+              </button>
               <input
-                id="tasks-search"
+                ref={searchInputRef}
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
                 placeholder="Buscar tarefas"
-                className="h-8 w-full rounded-md border border-[#d5ddec] px-2.5 text-sm text-[#1a2233] outline-none focus:border-[#95a8cb]"
+                className={`h-full min-w-0 flex-1 border-0 bg-transparent pr-3 text-sm text-[#131823] outline-none placeholder:text-[#9aa3b8] transition-opacity duration-200 ${
+                  isSearchOpen ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
               />
-            </div>
-          </form>
+              {isSearchOpen && searchDraft ? (
+                <button
+                  type="button"
+                  onClick={() => void resetSearch()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#69718a] transition hover:bg-[#f2f5fb] hover:text-[#1f2b46]"
+                  aria-label="Limpar busca"
+                  title="Limpar busca"
+                >
+                  <Plus aria-hidden="true" className="h-4 w-4 rotate-45" />
+                </button>
+              ) : null}
+            </form>
+          </ToolbarItem>
 
-          <CommonButton
-            type="button"
-            onClick={() => openCreate()}
-            variant="primary"
-            usage="info"
-            showIconLeft
-            iconLeft={<Plus aria-hidden="true" className="h-3.5 w-3.5" />}
-            className="h-8 px-3 text-sm"
-          >
-            Nova tarefa
-          </CommonButton>
-        </div>
+          <ToolbarItem>
+            <CommonButton
+              type="button"
+              onClick={() => openCreate()}
+              variant="primary"
+              usage="info"
+              showIconLeft
+              iconLeft={<Plus aria-hidden="true" className="h-4 w-4" />}
+              className="h-10 whitespace-nowrap px-3"
+              title="Adicionar tarefa"
+            >
+              Nova tarefa
+            </CommonButton>
+          </ToolbarItem>
+        </Toolbar>
       </div>
 
+      {message ? (
+        <p className="rounded-xl border border-[#bddfce] bg-[#e8f8ef] px-3 py-2 text-sm font-medium text-[#276348]">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="rounded-xl border border-[#f2c5cc] bg-[#fdeef1] px-3 py-2 text-sm font-medium text-[#9a3042]">
+          {error}
+        </p>
+      ) : null}
+
       {isLoading ? (
-        <div className="rounded-xl border border-[#dbe1ed] bg-white px-4 py-8 text-center text-sm text-[#667086]">Carregando tarefas...</div>
-      ) : tasks.length === 0 ? (
-        <div className="rounded-xl border border-[#dbe1ed] bg-white px-4 py-8 text-center">
-          <p className="text-sm text-[#1f2b46]">Nenhuma tarefa ainda</p>
-          <p className="mt-1 text-sm text-[#6d768d]">Adicione sua primeira tarefa para começar.</p>
+        <div className="rounded-[24px] border border-[#dbe1ed] bg-white px-4 py-8 text-center text-sm text-[#667086]">
+          Carregando tarefas...
+        </div>
+      ) : filteredAndSortedTasks.length === 0 ? (
+        <div className="rounded-[24px] border border-[#dbe1ed] bg-white px-4 py-8 text-center">
+          <p className="text-sm text-[#1f2b46]">Nenhuma tarefa encontrada.</p>
+          <p className="mt-1 text-sm text-[#6d768d]">Ajuste a busca, os filtros ou crie uma nova tarefa.</p>
+        </div>
+      ) : viewMode === "board" ? (
+        <div className={cx("grid gap-4", boardColumns.length === 1 ? "grid-cols-1" : "lg:grid-cols-3 lg:items-start")}>
+          {boardColumns.map((column) => (
+            <section
+              key={column.status}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => void onDropToColumn(column.status)}
+              className="rounded-[28px] border border-[#dde3ef] bg-[#f5f7fb] p-3"
+            >
+              <header className="mb-3 flex items-center gap-2 px-1">
+                <span className="text-[#7c86a0]">{statusIcon(column.status, "h-4 w-4")}</span>
+                <h4 className="text-[1rem] text-[#20293d]">{column.label}</h4>
+                <span className="text-sm text-[#7d869b]">{column.tasks.length}</span>
+                <IconButton
+                  type="button"
+                  onClick={() => openCreate(column.status)}
+                  className="ml-auto h-9 w-9 rounded-[10px]"
+                  variant="secondary"
+                  aria-label={`Adicionar tarefa em ${column.label}`}
+                  title={`Adicionar tarefa em ${column.label}`}
+                >
+                  <Plus aria-hidden="true" className="h-4 w-4" />
+                </IconButton>
+              </header>
+
+              <div className="space-y-3">
+                {column.tasks.length === 0 ? (
+                  <div className="rounded-[20px] bg-white px-4 py-4 text-sm text-[#7b849a]">
+                    Nenhuma tarefa nesta etapa.
+                  </div>
+                ) : (
+                  column.tasks.map((task) => renderTaskCard(task))
+                )}
+              </div>
+            </section>
+          ))}
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
-          {(
-            [
-              { status: "pending", label: settings.columnLabels.pending },
-              { status: "in_progress", label: settings.columnLabels.inProgress },
-              { status: "done", label: settings.columnLabels.done },
-            ] as Array<{ status: AdminTaskStatus; label: string }>
-          ).map((column) => {
-            const columnTasks = groupedTasks[column.status];
-            return (
-              <section
-                key={column.status}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => onDropToColumn(column.status)}
-                className="rounded-xl border border-[#dde3ef] bg-[#f5f7fb] p-2.5"
-              >
-                <header className="mb-2 flex items-center gap-2 px-1">
-                  <span className="h-2 w-2 rounded-full bg-[#8f9fbe]" aria-hidden="true" />
-                  <h4 className="text-sm text-[#20293d]">{column.label}</h4>
-                  <span className="rounded-full border border-[#d5ddec] bg-white px-2 py-0.5 text-[11px] text-[#687189]">
-                    {columnTasks.length}
-                  </span>
-                  <IconButton
-                    type="button"
-                    onClick={() => openCreate(column.status)}
-                    className="ml-auto h-7 w-7 rounded-md text-[#5d6780] hover:bg-white"
-                    size="xs"
-                    variant="secondary"
-                    aria-label={`Adicionar tarefa em ${column.label}`}
-                  >
-                    <Plus aria-hidden="true" className="h-4 w-4" />
-                  </IconButton>
-                </header>
-
-                <div className="space-y-2">
-                  {columnTasks.length === 0 ? (
-                    <div className="rounded-lg bg-white px-3 py-2 text-xs text-[#7b849a]">
-                      Nenhuma tarefa nesta etapa.
-                      <button
-                        type="button"
-                        onClick={() => openCreate(column.status)}
-                        className="ml-2 text-[#4b5fb8] underline-offset-2 hover:underline"
-                      >
-                        Adicionar tarefa
-                      </button>
-                    </div>
-                  ) : (
-                    columnTasks.map((task) => {
-                      const due = dueStatus(task.dueAt);
-                      return (
-                        <article
-                          key={task.id}
-                          draggable
-                          onDragStart={() => setDraggingTaskId(task.id)}
-                          onDragEnd={() => setDraggingTaskId(null)}
-                          onClick={() => openEdit(task)}
-                          className={`group cursor-pointer rounded-lg border bg-white p-2.5 shadow-[0_1px_3px_rgba(16,24,40,0.06)] transition ${
-                            draggingTaskId === task.id ? "border-[#9dadcf] opacity-70" : "border-[#d9e0ec] hover:border-[#bcc9df]"
-                          }`}
-                        >
-                          <div className="flex items-start gap-2">
-                            <IconButton
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void setTaskStatus(task, task.status === "done" ? "pending" : "done");
-                              }}
-                              disabled={pendingAction === `status:${task.id}`}
-                              className="mt-0.5 h-5 w-5 rounded-full border border-[#cad3e7] text-[#1b2235] shadow-none"
-                              size="xs"
-                              variant="secondary"
-                              aria-label={task.status === "done" ? "Reabrir tarefa" : "Concluir tarefa"}
-                            >
-                              {task.status === "done" ? (
-                                <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                              ) : (
-                                <Circle aria-hidden="true" className="h-3.5 w-3.5" />
-                              )}
-                            </IconButton>
-
-                            <div className="min-w-0 flex-1">
-                              <p className={`line-clamp-2 text-sm ${task.status === "done" ? "line-through text-[#7d8598]" : "text-[#171d2b]"}`}>
-                                {task.title || "Sem título"}
-                              </p>
-                              {task.notes ? <p className="mt-1 line-clamp-2 text-xs text-[#6d768d]">{task.notes}</p> : null}
-
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                {task.priority ? (
-                                  <Chip
-                                    label={task.priority === "high" ? "Alta" : task.priority === "medium" ? "Média" : "Baixa"}
-                                    tone={task.priority === "high" ? "priority-high" : task.priority === "medium" ? "priority-medium" : "priority-low"}
-                                  />
-                                ) : null}
-                                {settings.showTags
-                                  ? task.tags.slice(0, 2).map((tag) => <Chip key={`${task.id}:${tag}`} label={tag} />)
-                                  : null}
-                                {settings.showDueDate && task.dueAt ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-[#d8deea] px-2 py-0.5 text-[11px] text-[#55607a]">
-                                    <CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />
-                                    {due === "today" ? "Hoje" : formatDueDate(task.dueAt)}
-                                    {due === "overdue" ? " · Atrasada" : due === "today" ? " · Vence hoje" : ""}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-                              <IconButton
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openEdit(task);
-                                }}
-                                className="h-7 w-7 rounded-md text-[#5f6880] hover:bg-[#f2f5fb] shadow-none"
-                                size="xs"
-                                variant="secondary"
-                                aria-label="Editar tarefa"
-                              >
-                                <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
-                              </IconButton>
-                              <IconButton
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void deleteTask(task);
-                                }}
-                                disabled={pendingAction === `delete:${task.id}`}
-                                className="h-7 w-7 rounded-md text-[#5f6880] hover:bg-[#f2f5fb] shadow-none"
-                                size="xs"
-                                variant="destructive"
-                                aria-label="Excluir tarefa"
-                              >
-                                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                              </IconButton>
-                            </div>
-                          </div>
-                        </article>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <div className="space-y-3">{visibleTasks.map((task) => renderTaskListItem(task))}</div>
       )}
 
       {page < totalPages ? (
         <div className="flex items-center justify-center py-1">
           <CommonButton
             type="button"
-            onClick={() => loadTasks(page + 1)}
-            disabled={isLoading}
+            onClick={() => void loadTasks(page + 1, query)}
             variant="secondary"
             usage="general"
             showIconLeft
-            iconLeft={<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />}
-            className="h-8 px-3 text-xs"
+            iconLeft={isLoading ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Plus aria-hidden="true" className="h-3.5 w-3.5" />}
+            className="h-10 px-4 text-sm"
+            title="Carregar mais tarefas"
           >
-            Carregar mais
+            {isLoading ? "Carregando..." : "Carregar mais"}
           </CommonButton>
         </div>
       ) : null}
 
-      <Drawer open={isDrawerOpen} onClose={closeDrawer} title={editingTaskId ? "Detalhes da tarefa" : "Nova tarefa"}>
-        <form onSubmit={saveTask} className="flex min-h-[calc(100vh-80px)] flex-col">
-          <div className="space-y-3">
-            <label className="block space-y-1">
-              <span className="text-xs text-[#7a8298]">Título</span>
-              <input
-                value={form.title}
-                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                className="h-10 w-full rounded-lg border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                placeholder="Ex.: Revisar planejamento da semana"
+      <Drawer
+        open={isDrawerOpen}
+        onClose={closeDrawer}
+        title={form.title}
+        onTitleChange={(value) => setForm((current) => ({ ...current, title: value }))}
+        secondaryAction={{ label: "Cancelar", onClick: closeDrawer }}
+        primaryAction={{
+          label: pendingAction === "save" ? "Salvando..." : "Salvar",
+          onClick: () => {
+            if (pendingAction === "save") {
+              return;
+            }
+            (document.getElementById("admin-task-form") as HTMLFormElement | null)?.requestSubmit();
+          },
+        }}
+      >
+        <form id="admin-task-form" onSubmit={saveTask} className="space-y-6">
+          <DrawerSection title="Propriedades">
+            <DrawerFieldRow label={propertyLabel(statusIcon(form.status, "h-4 w-4"), "Status")} divider={false}>
+              <Combobox
+                options={statusOptions}
+                value={form.status}
+                onChange={(value) => {
+                  if (!value) return;
+                  setForm((current) => ({ ...current, status: value as AdminTaskStatus }));
+                }}
+                variant="embedded"
               />
-            </label>
+            </DrawerFieldRow>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs text-[#7a8298]">Status</span>
-                <select
-                  value={form.status}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, status: event.target.value as AdminTaskStatus }))
-                  }
-                  className="h-10 w-full rounded-lg border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                >
-                  <option value="pending">Pendente</option>
-                  <option value="in_progress">Em andamento</option>
-                  <option value="done">Concluída</option>
-                </select>
-              </label>
+            <DrawerFieldRow label={propertyLabel(priorityIcon(form.priority, "h-4 w-4"), "Prioridade")} divider={false}>
+              <Combobox
+                options={priorityOptions}
+                value={form.priority}
+                onChange={(value) => setForm((current) => ({ ...current, priority: (value as AdminTaskPriority) ?? null }))}
+                variant="embedded"
+                placeholder="Selecionar prioridade"
+              />
+            </DrawerFieldRow>
 
-              <label className="space-y-1">
-                <span className="text-xs text-[#7a8298]">Prioridade</span>
-                <select
-                  value={form.priority ?? ""}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      priority: event.target.value ? (event.target.value as AdminTaskPriority) : null,
-                    }))
-                  }
-                  className="h-10 w-full rounded-lg border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                >
-                  <option value="">Sem prioridade</option>
-                  <option value="low">Baixa</option>
-                  <option value="medium">Média</option>
-                  <option value="high">Alta</option>
-                </select>
-              </label>
-            </div>
+            <DrawerFieldRow label={propertyLabel(categoryIcon(form.category, "h-4 w-4"), "Categoria")} divider={false}>
+              <Combobox
+                options={categoryOptions}
+                value={form.category}
+                onChange={(value) => {
+                  if (!value) return;
+                  setForm((current) => ({ ...current, category: value as AdminTaskCategory }));
+                }}
+                variant="embedded"
+              />
+            </DrawerFieldRow>
 
             {settings.showDueDate ? (
-              <label className="block space-y-1">
-                <span className="text-xs text-[#7a8298]">Data de vencimento</span>
+              <DrawerFieldRow
+                label={propertyLabel(<CalendarClock aria-hidden="true" className="h-4 w-4" />, "Data de vencimento")}
+                divider={false}
+              >
                 <input
                   type="date"
                   value={form.dueAt}
                   onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
-                  className="h-10 w-full rounded-lg border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
+                  className="h-10 w-full max-w-[220px] bg-transparent px-0 text-sm text-[#151b28] outline-none"
                 />
-              </label>
+              </DrawerFieldRow>
             ) : null}
 
             {settings.showTags ? (
-              <label className="block space-y-1">
-                <span className="text-xs text-[#7a8298]">Tags</span>
-                <div className="rounded-lg border border-[#d1d9e9] px-2 py-2">
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {form.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex h-6 items-center gap-1 rounded-full border border-[#d9dfeb] bg-[#f7f9fd] px-2 text-[11px] text-[#55607a]"
-                      >
-                        {tag}
-                        <button
-                          type="button"
-                          className="inline-flex h-4 w-4 items-center justify-center text-[#7f889e]"
-                          aria-label={`Remover tag ${tag}`}
-                          onClick={() =>
-                            setForm((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }))
-                          }
-                        >
-                          <X aria-hidden="true" className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <input
-                    value={tagDraft}
-                    onChange={(event) => setTagDraft(event.target.value)}
-                    onBlur={commitTag}
-                    onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-                      if (event.key === "Enter" || event.key === ",") {
-                        event.preventDefault();
-                        commitTag();
-                      }
-                    }}
-                    placeholder="Digite e pressione Enter"
-                    className="h-8 w-full border-0 bg-transparent px-1 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
-                  />
-                </div>
-              </label>
+              <DrawerFieldRow label={propertyLabel(<Tag aria-hidden="true" className="h-4 w-4" />, "Tags")} divider={false}>
+                <Combobox
+                  selectionMode="multiple"
+                  options={tagOptions}
+                  value={form.tags}
+                  onChange={(value) => setForm((current) => ({ ...current, tags: value }))}
+                  variant="embedded"
+                  placeholder="Adicionar tag"
+                  allowCustomValue
+                  customValueLabel="Criar tag"
+                />
+              </DrawerFieldRow>
             ) : null}
+          </DrawerSection>
 
-            <label className="block space-y-1">
-              <span className="text-xs text-[#7a8298]">Descrição</span>
-              <textarea
+          <div className="border-t border-[#edf1f7] pt-6">
+            <DrawerSection title="Descricao">
+              <RichTextEditor
                 value={form.notes}
-                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-                className="min-h-[120px] w-full rounded-lg border border-[#d1d9e9] px-3 py-2 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                placeholder="Adicione detalhes úteis da tarefa."
+                onChange={(value) => setForm((current) => ({ ...current, notes: value }))}
+                className="min-h-[220px]"
               />
-            </label>
-          </div>
-
-          <div className="sticky bottom-0 mt-auto grid grid-cols-2 gap-2 border-t border-[#e1e6f0] bg-white pt-3">
-            <CommonButton type="button" onClick={closeDrawer} variant="secondary" usage="general">
-              Cancelar
-            </CommonButton>
-            <CommonButton
-              type="submit"
-              disabled={pendingAction === "save"}
-              variant="primary"
-              usage="info"
-              showIconLeft
-              iconLeft={pendingAction === "save" ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : null}
-            >
-              Salvar
-            </CommonButton>
+            </DrawerSection>
           </div>
         </form>
       </Drawer>

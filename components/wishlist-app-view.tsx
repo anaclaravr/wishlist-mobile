@@ -1,24 +1,30 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { FormEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownUp,
   Archive,
+  BookOpen,
   CalendarDays,
+  Check,
   ChevronRight,
   Clock3,
+  Dumbbell,
   ExternalLink,
   Eye,
   EyeOff,
   Filter,
   Flag,
   Flame,
+  Gamepad2,
+  Gem,
   Grid2X2,
   Home,
   Heart,
   Image as ImageIcon,
+  Laptop,
   Layers3,
   Loader2,
   List,
@@ -27,10 +33,14 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Save,
   Search,
+  Shirt,
+  Sofa,
+  Sparkles,
   ShoppingCart,
   Trash2,
+  UserRound,
+  UtensilsCrossed,
 } from "lucide-react";
 
 import type { AccessRole } from "@/lib/access";
@@ -54,10 +64,12 @@ import {
   ToolbarDivider,
   ToolbarItem,
 } from "@/components/ui/button-system";
-import { Drawer } from "@/components/ui/drawer";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { Drawer, DrawerFieldRow, DrawerSection } from "@/components/ui/drawer";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Chip } from "@/components/ui/chip";
+import { Tabs } from "@/components/ui/tabs";
+import { EditableLinkButtonField } from "@/components/ui/editable-link-button-field";
 
 type AccessView = {
   role: AccessRole;
@@ -241,9 +253,73 @@ function priorityLabel(priority: WishlistItemPriority) {
   return priority.charAt(0).toUpperCase() + priority.slice(1);
 }
 
+function categoryIcon(category: string | null | undefined) {
+  const normalized = (category ?? "").trim().toLowerCase();
+
+  if (!normalized || normalized === "geral") {
+    return Layers3;
+  }
+  if (/(roupa|camisa|vestido|saia|calca|jaqueta|moda|blusa|look)/.test(normalized)) {
+    return Shirt;
+  }
+  if (/(tech|tecnologia|eletron|notebook|pc|computador|celular|iphone|gadget)/.test(normalized)) {
+    return Laptop;
+  }
+  if (/(casa|decor|move|sofa|quarto|cozinha|mesa|banho)/.test(normalized)) {
+    return Sofa;
+  }
+  if (/(livro|book|leitura|revista)/.test(normalized)) {
+    return BookOpen;
+  }
+  if (/(game|jogo|console)/.test(normalized)) {
+    return Gamepad2;
+  }
+  if (/(beleza|make|perfume|skincare|cosmet)/.test(normalized)) {
+    return Sparkles;
+  }
+  if (/(joia|acessorio|anel|colar|brinco)/.test(normalized)) {
+    return Gem;
+  }
+  if (/(fitness|academia|esporte|treino)/.test(normalized)) {
+    return Dumbbell;
+  }
+  if (/(comida|bebida|cafe|restaurante|cozinha)/.test(normalized)) {
+    return UtensilsCrossed;
+  }
+
+  return Layers3;
+}
+
+function renderCategoryIcon(
+  category: string | null | undefined,
+  className = "h-4 w-4 shrink-0 text-[#6f7a95]",
+) {
+  const Icon = categoryIcon(category);
+  return <Icon aria-hidden="true" className={className} />;
+}
+
+function renderPriorityIcon(priority: WishlistItemPriority, className = "h-4 w-4 shrink-0") {
+  if (priority === "alta") {
+    return <Flame aria-hidden="true" className={`${className} text-[#d65840]`} />;
+  }
+  if (priority === "media") {
+    return <AlertTriangle aria-hidden="true" className={`${className} text-[#d2952c]`} />;
+  }
+  return <Minus aria-hidden="true" className={`${className} text-[#6f7a95]`} />;
+}
+
+function propertyLabel(icon: ReactNode, label: string) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="text-[#7a8398]">{icon}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function isInteractiveCardTarget(target: EventTarget | null) {
   return target instanceof HTMLElement
-    ? Boolean(target.closest("a, button, input, select, textarea, label"))
+    ? Boolean(target.closest("[data-card-interactive], a, button, input, select, textarea, label"))
     : false;
 }
 
@@ -276,6 +352,7 @@ export function WishlistAppView({
   const [editingPersonalItemId, setEditingPersonalItemId] = useState<string | null>(null);
   const [officialForm, setOfficialForm] = useState<OfficialForm>(defaultOfficialForm);
   const [personalForm, setPersonalForm] = useState<PersonalForm>(defaultPersonalForm);
+  const [customCategoryOptions, setCustomCategoryOptions] = useState<ComboboxOption[]>([]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -286,25 +363,30 @@ export function WishlistAppView({
   function can(permission: PermissionKey) {
     return hasPermission(access.role, permission);
   }
+  const canManageFavorites = can("wishlist.favorites.manage");
   const canManagePersonal = can("wishlist.personal.create") || can("wishlist.personal.edit");
 
   useEffect(() => {
     async function loadExtras() {
       try {
-        const favoritesResponse = await fetch(
-          `/api/items/favorites?slug=${encodeURIComponent(data.wishlist.slug)}`,
-        );
+        if (canManageFavorites) {
+          const favoritesResponse = await fetch(
+            `/api/items/favorites?slug=${encodeURIComponent(data.wishlist.slug)}`,
+          );
 
-        const favoritesResult = (await favoritesResponse.json()) as {
-          favorites?: string[];
-          error?: string;
-        };
+          const favoritesResult = (await favoritesResponse.json()) as {
+            favorites?: string[];
+            error?: string;
+          };
 
-        if (!favoritesResponse.ok) {
-          throw new Error(favoritesResult.error ?? "Nao foi possivel carregar favoritos.");
+          if (!favoritesResponse.ok) {
+            throw new Error(favoritesResult.error ?? "Nao foi possivel carregar favoritos.");
+          }
+
+          setFavoriteItemIds(new Set(favoritesResult.favorites ?? []));
+        } else {
+          setFavoriteItemIds(new Set());
         }
-
-        setFavoriteItemIds(new Set(favoritesResult.favorites ?? []));
 
         if (canManagePersonal) {
           const personalResponse = await fetch(
@@ -329,7 +411,18 @@ export function WishlistAppView({
     }
 
     loadExtras();
-  }, [canManagePersonal, data.wishlist.slug]);
+  }, [canManageFavorites, canManagePersonal, data.wishlist.slug]);
+
+  useEffect(() => {
+    if (activeTab === "favoritos" && !canManageFavorites) {
+      setActiveTab("todos");
+      return;
+    }
+
+    if (activeTab === "meus-itens" && !canManagePersonal) {
+      setActiveTab("todos");
+    }
+  }, [activeTab, canManageFavorites, canManagePersonal]);
 
   const favoriteBaseItems = useMemo(
     () => items.filter((item) => favoriteItemIds.has(item.id)),
@@ -366,6 +459,37 @@ export function WishlistAppView({
       )],
     [filterPoolItems],
   );
+  const formCategoryOptions = useMemo<ComboboxOption[]>(
+    () =>
+      Array.from(
+        new Set([
+          ...items.map((item) => item.category),
+          ...personalItems.map((item) => item.category),
+          defaultOfficialForm.category,
+        ]),
+      )
+        .sort((left, right) => left.localeCompare(right, "pt-BR"))
+        .map<ComboboxOption>((category) => ({
+          value: category,
+          label: category,
+          icon: renderCategoryIcon(category, "h-3.5 w-3.5"),
+          chipType: "secondary",
+          chipSurface: "neutral",
+        }))
+        .concat(customCategoryOptions),
+    [customCategoryOptions, items, personalItems],
+  );
+  const priorityOptions = useMemo<ComboboxOption[]>(
+    () =>
+      (["baixa", "media", "alta"] as WishlistItemPriority[]).map<ComboboxOption>((priority) => ({
+        value: priority,
+        label: priorityLabel(priority),
+        icon: renderPriorityIcon(priority, "h-3.5 w-3.5 shrink-0"),
+        chipType: priorityChipType(priority),
+        chipSurface: "filled",
+      })),
+    [],
+  );
 
   useEffect(() => {
     if (categories.includes(appliedFilters.category)) {
@@ -386,6 +510,28 @@ export function WishlistAppView({
       setDraftFilters((current) => ({ ...current, availability: "todos" }));
     }
   }, [activeTab, appliedFilters.availability, draftFilters.availability]);
+
+  function appendCustomCategoryOption(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setCustomCategoryOptions((current) =>
+      current.some((option) => option.value.toLowerCase() === trimmed.toLowerCase())
+        ? current
+        : [
+            ...current,
+            {
+              value: trimmed,
+              label: trimmed,
+              icon: renderCategoryIcon(trimmed, "h-3.5 w-3.5"),
+              chipType: "secondary",
+              chipSurface: "neutral",
+            },
+          ],
+    );
+  }
 
   function matchesOfficialFilters(item: WishlistItem, filters: FilterState) {
     const matchesCategory = filters.category === "Todas" || item.category === filters.category;
@@ -644,8 +790,16 @@ export function WishlistAppView({
   }
 
   async function toggleFavorite(item: WishlistItem) {
+    if (!canManageFavorites) {
+      setError("Seu perfil nao pode favoritar itens.");
+      return;
+    }
+
     const isFavorite = favoriteItemIds.has(item.id);
     const pendingKey = `favorite:${item.id}`;
+    if (pendingAction === pendingKey) {
+      return;
+    }
     setPendingAction(pendingKey);
     setError(null);
 
@@ -688,6 +842,9 @@ export function WishlistAppView({
     }
 
     const pendingKey = `acquire:${item.id}`;
+    if (pendingAction === pendingKey) {
+      return;
+    }
     setPendingAction(pendingKey);
     setError(null);
 
@@ -742,6 +899,9 @@ export function WishlistAppView({
 
   async function submitOfficialForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction === "official:submit") {
+      return;
+    }
 
     if (!can("wishlist.official.create")) {
       setError("Seu perfil nao pode criar itens oficiais.");
@@ -822,7 +982,11 @@ export function WishlistAppView({
       return;
     }
 
-    setPendingAction(`archive:${item.id}`);
+    const pendingKey = `archive:${item.id}`;
+    if (pendingAction === pendingKey) {
+      return;
+    }
+    setPendingAction(pendingKey);
     setError(null);
 
     try {
@@ -859,7 +1023,11 @@ export function WishlistAppView({
       return;
     }
 
-    setPendingAction(`delete:${item.id}`);
+    const pendingKey = `delete:${item.id}`;
+    if (pendingAction === pendingKey) {
+      return;
+    }
+    setPendingAction(pendingKey);
     setError(null);
 
     try {
@@ -910,6 +1078,9 @@ export function WishlistAppView({
 
   async function submitPersonalForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction === "personal:submit") {
+      return;
+    }
 
     if (!can("wishlist.personal.create")) {
       setError("Seu perfil nao pode criar itens pessoais.");
@@ -995,7 +1166,11 @@ export function WishlistAppView({
       return;
     }
 
-    setPendingAction(`personal-delete:${item.id}`);
+    const pendingKey = `personal-delete:${item.id}`;
+    if (pendingAction === pendingKey) {
+      return;
+    }
+    setPendingAction(pendingKey);
     setError(null);
 
     try {
@@ -1049,7 +1224,6 @@ export function WishlistAppView({
                 ) : (
                   <RotateCcw aria-hidden="true" className="h-4 w-4" />
                 ),
-              disabled: pendingAction === `acquire:${item.id}`,
               onSelect: () => toggleAcquire(item),
             },
           ]
@@ -1076,7 +1250,6 @@ export function WishlistAppView({
                 ) : (
                   <Archive aria-hidden="true" className="h-4 w-4" />
                 ),
-              disabled: pendingAction === `archive:${item.id}`,
               onSelect: () => archiveOfficialItem(item),
             },
           ]
@@ -1092,7 +1265,6 @@ export function WishlistAppView({
                 ) : (
                   <Trash2 aria-hidden="true" className="h-4 w-4" />
                 ),
-              disabled: pendingAction === `delete:${item.id}`,
               danger: true,
               separatorBefore: true,
               onSelect: () => deleteOfficialItem(item),
@@ -1125,7 +1297,6 @@ export function WishlistAppView({
                 ) : (
                   <Trash2 aria-hidden="true" className="h-4 w-4" />
                 ),
-              disabled: pendingAction === `personal-delete:${item.id}`,
               danger: true,
               separatorBefore: can("wishlist.personal.edit"),
               onSelect: () => deletePersonalItem(item),
@@ -1171,24 +1342,27 @@ export function WishlistAppView({
             />
           ) : null}
 
-          <IconButton
-            type="button"
-            onClick={() => toggleFavorite(item)}
-            disabled={pendingAction === `favorite:${item.id}`}
-            className="absolute right-3 top-3 h-8 w-8 border-white/90 bg-white/90 text-[#4f5870] shadow-sm hover:text-[#d23d61]"
-            size="sm"
-            variant="secondary"
-            selected={isFavorite}
-          >
-            {pendingAction === `favorite:${item.id}` ? (
-              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-            ) : (
-              <Heart
-                aria-hidden="true"
-                className={`h-4 w-4 ${isFavorite ? "fill-current text-[#d23d61]" : ""}`}
-              />
-            )}
-          </IconButton>
+          {canManageFavorites ? (
+            <IconButton
+              type="button"
+              onClick={() => toggleFavorite(item)}
+              className="absolute right-3 top-3 h-8 w-8 border-white/90 bg-white/90 text-[#4f5870] shadow-sm hover:text-[#d23d61]"
+              size="sm"
+              variant="secondary"
+              selected={isFavorite}
+              aria-label={isFavorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`}
+              title={isFavorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`}
+            >
+              {pendingAction === `favorite:${item.id}` ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : (
+                <Heart
+                  aria-hidden="true"
+                  className={`h-4 w-4 ${isFavorite ? "fill-current text-[#d23d61]" : ""}`}
+                />
+              )}
+            </IconButton>
+          ) : null}
         </div>
 
         <div className="space-y-3 px-2 pb-2 pt-4">
@@ -1197,7 +1371,10 @@ export function WishlistAppView({
               <h3 className="truncate text-[1rem] font-semibold leading-tight text-[#121723]">
                 {item.name}
               </h3>
-              <p className="mt-1 truncate text-xs text-[#6c7489]">{getSourceLabel(item.purchaseUrl)}</p>
+              <p className="mt-1 inline-flex items-center gap-1 text-xs text-[#3f475b]">
+                <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#6c7489]" />
+                {formatCreatedLabel(item.createdAt)}
+              </p>
             </div>
             <p className="shrink-0 text-right text-[1.02rem] font-semibold leading-none text-[#101623]">
               {formatPrice(item.priceCents, item.currency)}
@@ -1211,14 +1388,14 @@ export function WishlistAppView({
               type="secondary"
               surface="neutral"
               showIconLeft
-              iconLeft={<Layers3 aria-hidden="true" />}
+              iconLeft={renderCategoryIcon(item.category, "h-3.5 w-3.5")}
             />
             <Chip
               label={priorityLabel(item.priority)}
               size="sm"
               type={priorityChipType(item.priority)}
               showIconLeft
-              iconLeft={<Flag aria-hidden="true" />}
+              iconLeft={renderPriorityIcon(item.priority, "h-3.5 w-3.5 shrink-0")}
             />
             <Chip
               label={isAcquired ? "Adquirido" : "Disponivel"}
@@ -1237,42 +1414,51 @@ export function WishlistAppView({
                 iconLeft={<RotateCcw aria-hidden="true" />}
               />
             ) : null}
-            <span className="inline-flex h-7 items-center gap-1 rounded-[10px] px-2 text-xs font-medium text-[#5e667c]">
-              <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-              {formatCreatedLabel(item.createdAt)}
-            </span>
           </div>
 
           <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-            <a href={item.purchaseUrl} target="_blank" rel="noreferrer" className={cardActionLinkClass}>
+            <a
+              href={item.purchaseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cardActionLinkClass}
+              data-card-interactive
+              title={`Abrir link de compra de ${item.name}`}
+              onClick={(event) => event.stopPropagation()}
+            >
               <ExternalLink aria-hidden="true" className="h-4 w-4" />
               Comprar
             </a>
-            <IconButton
-              type="button"
-              onClick={() => toggleAcquire(item)}
-              disabled={!can("wishlist.acquire.toggle") || pendingAction === `acquire:${item.id}`}
-              className="h-10 w-10"
-              variant={isAcquired ? "info" : "secondary"}
-              selected={isAcquired}
-            >
-              {pendingAction === `acquire:${item.id}` ? (
-                <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
-              ) : (
-                <ShoppingCart aria-hidden="true" className={`h-5 w-5 ${isAcquired ? "fill-current" : ""}`} />
-              )}
-            </IconButton>
-            {menuItems.length > 0 ? (
-              <MenuIconButton
-                ariaLabel={`Mais acoes para ${item.name}`}
-                variant="secondary"
-                menuAlignment="right"
-                tooltip
-                items={menuItems}
-                className="h-10"
+            <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+              <IconButton
+                type="button"
+                onClick={() => toggleAcquire(item)}
+                className="h-11 w-11"
+                variant={isAcquired ? "info" : "secondary"}
+                selected={isAcquired}
+                aria-label={isAcquired ? `Desmarcar ${item.name} como adquirido` : `Marcar ${item.name} como adquirido`}
+                title={isAcquired ? `Desmarcar ${item.name} como adquirido` : `Marcar ${item.name} como adquirido`}
               >
-                <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
-              </MenuIconButton>
+                {pendingAction === `acquire:${item.id}` ? (
+                  <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
+                ) : (
+                  <ShoppingCart aria-hidden="true" className={`h-5 w-5 ${isAcquired ? "fill-current" : ""}`} />
+                )}
+              </IconButton>
+            </div>
+            {menuItems.length > 0 ? (
+              <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+                <MenuIconButton
+                  ariaLabel={`Mais acoes para ${item.name}`}
+                  variant="secondary"
+                  menuAlignment="right"
+                  tooltip
+                  items={menuItems}
+                  buttonClassName="h-11 w-11"
+                >
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                </MenuIconButton>
+              </div>
             ) : null}
           </div>
         </div>
@@ -1328,7 +1514,10 @@ export function WishlistAppView({
               <h3 className="truncate text-[1rem] font-semibold leading-tight text-[#121723]">
                 {item.name}
               </h3>
-              <p className="mt-1 truncate text-xs text-[#6c7489]">{getSourceLabel(item.purchaseUrl)}</p>
+              <p className="mt-1 inline-flex items-center gap-1 text-xs text-[#3f475b]">
+                <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#6c7489]" />
+                {formatCreatedLabel(item.createdAt)}
+              </p>
             </div>
             <p className="shrink-0 text-right text-[1.02rem] font-semibold leading-none text-[#101623]">
               {formatPrice(item.priceCents, item.currency)}
@@ -1342,14 +1531,14 @@ export function WishlistAppView({
               type="secondary"
               surface="neutral"
               showIconLeft
-              iconLeft={<Layers3 aria-hidden="true" />}
+              iconLeft={renderCategoryIcon(item.category, "h-3.5 w-3.5")}
             />
             <Chip
               label={priorityLabel(item.priority)}
               size="sm"
               type={priorityChipType(item.priority)}
               showIconLeft
-              iconLeft={<Flag aria-hidden="true" />}
+              iconLeft={renderPriorityIcon(item.priority, "h-3.5 w-3.5 shrink-0")}
             />
             <Chip
               label="Disponivel"
@@ -1371,21 +1560,30 @@ export function WishlistAppView({
           </div>
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <a href={item.purchaseUrl} target="_blank" rel="noreferrer" className={cardActionLinkClass}>
+            <a
+              href={item.purchaseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cardActionLinkClass}
+              data-card-interactive
+              onClick={(event) => event.stopPropagation()}
+            >
               <ExternalLink aria-hidden="true" className="h-4 w-4" />
               Abrir
             </a>
             {menuItems.length > 0 ? (
-              <MenuIconButton
-                ariaLabel={`Mais acoes para ${item.name}`}
-                variant="secondary"
-                menuAlignment="right"
-                tooltip
-                items={menuItems}
-                className="h-10"
-              >
-                <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
-              </MenuIconButton>
+              <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+                <MenuIconButton
+                  ariaLabel={`Mais acoes para ${item.name}`}
+                  variant="secondary"
+                  menuAlignment="right"
+                  tooltip
+                  items={menuItems}
+                  buttonClassName="h-11 w-11"
+                >
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                </MenuIconButton>
+              </div>
             ) : null}
           </div>
         </div>
@@ -1424,7 +1622,10 @@ export function WishlistAppView({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="truncate text-[1rem] font-semibold text-[#121723]">{item.name}</h3>
-                  <p className="mt-1 truncate text-sm text-[#6c7489]">{getSourceLabel(item.purchaseUrl)}</p>
+                  <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#3f475b]">
+                    <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#6c7489]" />
+                    {formatCreatedLabel(item.createdAt)}
+                  </p>
                 </div>
                 <p className="shrink-0 text-[1rem] font-semibold text-[#101623]">
                   {formatPrice(item.priceCents, item.currency)}
@@ -1448,14 +1649,14 @@ export function WishlistAppView({
                   type="secondary"
                   surface="neutral"
                   showIconLeft
-                  iconLeft={<Layers3 aria-hidden="true" />}
+                  iconLeft={renderCategoryIcon(item.category, "h-3.5 w-3.5")}
                 />
                 <Chip
                   label={priorityLabel(item.priority)}
                   size="sm"
                   type={priorityChipType(item.priority)}
                   showIconLeft
-                  iconLeft={<Flag aria-hidden="true" />}
+                  iconLeft={renderPriorityIcon(item.priority, "h-3.5 w-3.5 shrink-0")}
                 />
                 <Chip
                   label={isAcquired ? "Adquirido" : "Disponivel"}
@@ -1474,60 +1675,75 @@ export function WishlistAppView({
                     iconLeft={<RotateCcw aria-hidden="true" />}
                   />
                 ) : null}
-                <span className="inline-flex h-7 items-center gap-1 rounded-[10px] px-2 text-xs font-medium text-[#5e667c]">
-                  <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                  {formatCreatedLabel(item.createdAt)}
-                </span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 lg:self-stretch">
-            <IconButton
-              type="button"
-              onClick={() => toggleFavorite(item)}
-              disabled={pendingAction === `favorite:${item.id}`}
-              variant="secondary"
-              selected={isFavorite}
-              className="h-10 w-10"
+            {canManageFavorites ? (
+              <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+                <IconButton
+                  type="button"
+                  onClick={() => toggleFavorite(item)}
+                  variant="secondary"
+                  selected={isFavorite}
+                  className="h-11 w-11"
+                  aria-label={isFavorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`}
+                  title={isFavorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`}
+                >
+                  {pendingAction === `favorite:${item.id}` ? (
+                    <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Heart
+                      aria-hidden="true"
+                      className={`h-4 w-4 ${isFavorite ? "fill-current text-[#d23d61]" : ""}`}
+                    />
+                  )}
+                </IconButton>
+              </div>
+            ) : null}
+            <a
+              href={item.purchaseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cardActionLinkClass}
+              data-card-interactive
+              title={`Abrir link de compra de ${item.name}`}
+              onClick={(event) => event.stopPropagation()}
             >
-              {pendingAction === `favorite:${item.id}` ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : (
-                <Heart
-                  aria-hidden="true"
-                  className={`h-4 w-4 ${isFavorite ? "fill-current text-[#d23d61]" : ""}`}
-                />
-              )}
-            </IconButton>
-            <a href={item.purchaseUrl} target="_blank" rel="noreferrer" className={cardActionLinkClass}>
               <ExternalLink aria-hidden="true" className="h-4 w-4" />
               Comprar
             </a>
-            <IconButton
-              type="button"
-              onClick={() => toggleAcquire(item)}
-              disabled={!can("wishlist.acquire.toggle") || pendingAction === `acquire:${item.id}`}
-              className="h-10 w-10"
-              variant={isAcquired ? "info" : "secondary"}
-              selected={isAcquired}
-            >
-              {pendingAction === `acquire:${item.id}` ? (
-                <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
-              ) : (
-                <ShoppingCart aria-hidden="true" className={`h-5 w-5 ${isAcquired ? "fill-current" : ""}`} />
-              )}
-            </IconButton>
-            {menuItems.length > 0 ? (
-              <MenuIconButton
-                ariaLabel={`Mais acoes para ${item.name}`}
-                variant="secondary"
-                menuAlignment="right"
-                tooltip
-                items={menuItems}
+            <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+              <IconButton
+                type="button"
+                onClick={() => toggleAcquire(item)}
+                className="h-11 w-11"
+                variant={isAcquired ? "info" : "secondary"}
+                selected={isAcquired}
+                aria-label={isAcquired ? `Desmarcar ${item.name} como adquirido` : `Marcar ${item.name} como adquirido`}
+                title={isAcquired ? `Desmarcar ${item.name} como adquirido` : `Marcar ${item.name} como adquirido`}
               >
-                <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
-              </MenuIconButton>
+                {pendingAction === `acquire:${item.id}` ? (
+                  <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
+                ) : (
+                  <ShoppingCart aria-hidden="true" className={`h-5 w-5 ${isAcquired ? "fill-current" : ""}`} />
+                )}
+              </IconButton>
+            </div>
+            {menuItems.length > 0 ? (
+              <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+                <MenuIconButton
+                  ariaLabel={`Mais acoes para ${item.name}`}
+                  variant="secondary"
+                  menuAlignment="right"
+                  tooltip
+                  items={menuItems}
+                  buttonClassName="h-11 w-11"
+                >
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                </MenuIconButton>
+              </div>
             ) : null}
           </div>
         </div>
@@ -1564,7 +1780,10 @@ export function WishlistAppView({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="truncate text-[1rem] font-semibold text-[#121723]">{item.name}</h3>
-                  <p className="mt-1 truncate text-sm text-[#6c7489]">{getSourceLabel(item.purchaseUrl)}</p>
+                  <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#3f475b]">
+                    <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#6c7489]" />
+                    {formatCreatedLabel(item.createdAt)}
+                  </p>
                 </div>
                 <p className="shrink-0 text-[1rem] font-semibold text-[#101623]">
                   {formatPrice(item.priceCents, item.currency)}
@@ -1588,14 +1807,14 @@ export function WishlistAppView({
                   type="secondary"
                   surface="neutral"
                   showIconLeft
-                  iconLeft={<Layers3 aria-hidden="true" />}
+                  iconLeft={renderCategoryIcon(item.category, "h-3.5 w-3.5")}
                 />
                 <Chip
                   label={priorityLabel(item.priority)}
                   size="sm"
                   type={priorityChipType(item.priority)}
                   showIconLeft
-                  iconLeft={<Flag aria-hidden="true" />}
+                  iconLeft={renderPriorityIcon(item.priority, "h-3.5 w-3.5 shrink-0")}
                 />
                 <Chip
                   label="Disponivel"
@@ -1629,20 +1848,31 @@ export function WishlistAppView({
           </div>
 
           <div className="flex items-center justify-end gap-2 lg:self-stretch">
-            <a href={item.purchaseUrl} target="_blank" rel="noreferrer" className={cardActionLinkClass}>
+            <a
+              href={item.purchaseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cardActionLinkClass}
+              data-card-interactive
+              title={`Abrir link de ${item.name}`}
+              onClick={(event) => event.stopPropagation()}
+            >
               <ExternalLink aria-hidden="true" className="h-4 w-4" />
               Abrir
             </a>
             {menuItems.length > 0 ? (
-              <MenuIconButton
-                ariaLabel={`Mais acoes para ${item.name}`}
-                variant="secondary"
-                menuAlignment="right"
-                tooltip
-                items={menuItems}
-              >
-                <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
-              </MenuIconButton>
+              <div data-card-interactive className="-m-1 flex items-center justify-center p-1" onClick={(event) => event.stopPropagation()}>
+                <MenuIconButton
+                  ariaLabel={`Mais acoes para ${item.name}`}
+                  variant="secondary"
+                  menuAlignment="right"
+                  tooltip
+                  items={menuItems}
+                  buttonClassName="h-11 w-11"
+                >
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                </MenuIconButton>
+              </div>
             ) : null}
           </div>
         </div>
@@ -1816,18 +2046,27 @@ export function WishlistAppView({
   function getActiveFilterOptionIcon(optionId: string) {
     if (effectiveActiveFilterPanel === "prioridade") {
       if (optionId === "alta") {
-        return <Flame aria-hidden="true" className="h-4 w-4 shrink-0 text-[#d65840]" />;
+        return renderPriorityIcon("alta");
       }
       if (optionId === "media") {
-        return <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-[#d2952c]" />;
+        return renderPriorityIcon("media");
       }
       if (optionId === "baixa") {
-        return <Minus aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+        return renderPriorityIcon("baixa");
       }
-      return <Layers3 aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+      return renderPriorityIcon("media");
     }
 
     if (effectiveActiveFilterPanel === "status") {
+      if (optionId === "todos") {
+        return <Layers3 aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+      }
+      if (optionId === "disponiveis") {
+        return <ShoppingCart aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+      }
+      if (optionId === "adquiridos") {
+        return <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-[#1d7b43]" />;
+      }
       return <ShoppingCart aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
     }
 
@@ -1835,7 +2074,7 @@ export function WishlistAppView({
       return <RotateCcw aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
     }
 
-    return <Layers3 aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+    return renderCategoryIcon(optionId);
   }
 
   const filterSectionListItems = filterSections.map((section) => {
@@ -1930,7 +2169,7 @@ export function WishlistAppView({
         />
 
         <section className="bg-[#f8f9fd]">
-          <header className="border-b border-[#dee4ef] px-4 py-5 sm:px-6 sm:py-6">
+          <header className="px-4 py-5 sm:px-6 sm:py-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <Breadcrumb
@@ -2051,19 +2290,29 @@ export function WishlistAppView({
                         <div className="grid grid-cols-2 gap-2">
                           <CommonButton
                             type="button"
-                            onClick={resetDraftFilters}
-                            disabled={!hasDraftFilters}
+                            onClick={() => {
+                              if (!hasDraftFilters) {
+                                return;
+                              }
+                              resetDraftFilters();
+                            }}
                             variant="secondary"
                             usage="general"
+                            title="Limpar filtros"
                           >
                             Reset
                           </CommonButton>
                           <CommonButton
                             type="button"
-                            onClick={applyDraftFilters}
-                            disabled={!hasPendingFilterChanges}
+                            onClick={() => {
+                              if (!hasPendingFilterChanges) {
+                                return;
+                              }
+                              applyDraftFilters();
+                            }}
                             variant="primary"
                             usage="info"
+                            title="Aplicar filtros"
                           >
                             Apply
                           </CommonButton>
@@ -2112,18 +2361,36 @@ export function WishlistAppView({
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <SegmentedTabs<"todos" | "favoritos" | "meus-itens">
+              <Tabs<"todos" | "favoritos" | "meus-itens">
                 value={activeTab}
                 onChange={setActiveTab}
                 items={[
-                  { id: "todos", label: "Todos", count: visibleOfficialItems.length },
-                  { id: "favoritos", label: "Favoritos", count: favoriteItems.length },
                   {
-                    id: "meus-itens",
-                    label: "Meus itens",
-                    count: visiblePersonalItems.length,
-                    disabled: !canManagePersonal,
+                    id: "todos",
+                    label: "Todos",
+                    count: visibleOfficialItems.length,
+                    icon: <Layers3 aria-hidden="true" className="h-5 w-5" />,
                   },
+                  ...(canManageFavorites
+                    ? [
+                        {
+                          id: "favoritos" as const,
+                          label: "Favoritos",
+                          count: favoriteItems.length,
+                          icon: <Heart aria-hidden="true" className="h-5 w-5" />,
+                        },
+                      ]
+                    : []),
+                  ...(canManagePersonal
+                    ? [
+                        {
+                          id: "meus-itens" as const,
+                          label: "Meus itens",
+                          count: visiblePersonalItems.length,
+                          icon: <UserRound aria-hidden="true" className="h-5 w-5" />,
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
@@ -2205,19 +2472,29 @@ export function WishlistAppView({
                         <div className="grid grid-cols-2 gap-2">
                           <CommonButton
                             type="button"
-                            onClick={resetDraftFilters}
-                            disabled={!hasDraftFilters}
+                            onClick={() => {
+                              if (!hasDraftFilters) {
+                                return;
+                              }
+                              resetDraftFilters();
+                            }}
                             variant="secondary"
                             usage="general"
+                            title="Limpar filtros"
                           >
                             Reset
                           </CommonButton>
                           <CommonButton
                             type="button"
-                            onClick={applyDraftFilters}
-                            disabled={!hasPendingFilterChanges}
+                            onClick={() => {
+                              if (!hasPendingFilterChanges) {
+                                return;
+                              }
+                              applyDraftFilters();
+                            }}
                             variant="primary"
                             usage="info"
+                            title="Aplicar filtros"
                           >
                             Apply
                           </CommonButton>
@@ -2311,6 +2588,7 @@ export function WishlistAppView({
                       showIconLeft
                       iconLeft={<Plus aria-hidden="true" className="h-4 w-4" />}
                       className="h-10 whitespace-nowrap px-3"
+                      title={showOfficialTrigger ? "Adicionar item oficial" : "Adicionar item pessoal"}
                     >
                       Novo item
                     </CommonButton>
@@ -2375,116 +2653,109 @@ export function WishlistAppView({
           setOfficialForm(defaultOfficialForm);
         }}
         title={editingOfficialItemId ? "Editar item oficial" : "Novo item oficial"}
+        secondaryAction={{
+          label: "Cancelar",
+          onClick: () => {
+            setIsOfficialDrawerOpen(false);
+            setEditingOfficialItemId(null);
+            setOfficialForm(defaultOfficialForm);
+          },
+        }}
+        primaryAction={{
+          label: editingOfficialItemId ? "Salvar item oficial" : "Criar item oficial",
+          onClick: () => {
+            if (pendingAction === "official:submit") {
+              return;
+            }
+            (document.getElementById("official-item-form") as HTMLFormElement | null)?.requestSubmit();
+          },
+        }}
       >
-        <form onSubmit={submitOfficialForm} className="space-y-3">
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Nome</span>
-            <input
-              value={officialForm.name}
-              onChange={(event) => setOfficialForm((current) => ({ ...current, name: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              required
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Link</span>
-            <input
-              value={officialForm.purchaseUrl}
-              onChange={(event) =>
-                setOfficialForm((current) => ({ ...current, purchaseUrl: event.target.value }))
-              }
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              placeholder="https://..."
-              required
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Imagem</span>
-            <input
-              value={officialForm.imageUrl}
-              onChange={(event) =>
-                setOfficialForm((current) => ({ ...current, imageUrl: event.target.value }))
-              }
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              placeholder="https://..."
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Preco</span>
+        <form id="official-item-form" onSubmit={submitOfficialForm} className="space-y-6">
+          <DrawerSection title="Propriedades">
+            <DrawerFieldRow label={propertyLabel(<Pencil aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
+              <input
+                value={officialForm.name}
+                onChange={(event) => setOfficialForm((current) => ({ ...current, name: event.target.value }))}
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
+                required
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link")} divider={false}>
+              <EditableLinkButtonField
+                value={officialForm.purchaseUrl}
+                onChange={(value) =>
+                  setOfficialForm((current) => ({ ...current, purchaseUrl: value }))
+                }
+                placeholder="https://..."
+                required
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem")} divider={false}>
+              <EditableLinkButtonField
+                value={officialForm.imageUrl}
+                onChange={(value) =>
+                  setOfficialForm((current) => ({ ...current, imageUrl: value }))
+                }
+                placeholder="https://..."
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={officialForm.price}
                 onChange={(event) =>
                   setOfficialForm((current) => ({ ...current, price: event.target.value }))
                 }
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 placeholder="149,90"
                 required
               />
-            </label>
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Categoria</span>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(renderCategoryIcon(officialForm.category, "h-4 w-4"), "Categoria")} divider={false}>
+              <div className="max-w-[320px]">
+                <Combobox
+                  variant="embedded"
+                  options={formCategoryOptions}
+                  value={officialForm.category}
+                  onChange={(value) =>
+                    setOfficialForm((current) => ({ ...current, category: value ?? current.category }))
+                  }
+                  placeholder="Selecione uma categoria"
+                  allowCustomValue
+                  onCreateOption={appendCustomCategoryOption}
+                />
+              </div>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<Flag aria-hidden="true" className="h-4 w-4" />, "Prioridade")} divider={false}>
+              <div className="max-w-[280px]">
+                <Combobox
+                  variant="embedded"
+                  options={priorityOptions}
+                  value={officialForm.priority}
+                  onChange={(value) =>
+                    setOfficialForm((current) => ({
+                      ...current,
+                      priority: (value as WishlistItemPriority | null) ?? current.priority,
+                    }))
+                  }
+                  placeholder="Selecione uma prioridade"
+                />
+              </div>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<RotateCcw aria-hidden="true" className="h-4 w-4" />, "Compra recorrente")} divider={false}>
               <input
-                value={officialForm.category}
+                type="checkbox"
+                checked={isRecurringItem(officialForm.repurchaseState)}
                 onChange={(event) =>
-                  setOfficialForm((current) => ({ ...current, category: event.target.value }))
+                  setOfficialForm((current) => ({
+                    ...current,
+                    repurchaseState: event.target.checked ? "precisa_recompra" : "nao_recompra",
+                  }))
                 }
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                required
+                className="h-4 w-4 rounded border-[#b9c4d7] accent-[#3555d2]"
               />
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <CommonButton
-              type="button"
-              onClick={() => setOfficialForm((current) => ({ ...current, priority: "baixa" }))}
-              variant={officialForm.priority === "baixa" ? "primary" : "secondary"}
-              usage={officialForm.priority === "baixa" ? "info" : "general"}
-              className="h-10"
-            >
-              Baixa
-            </CommonButton>
-            <CommonButton
-              type="button"
-              onClick={() => setOfficialForm((current) => ({ ...current, priority: "media" }))}
-              variant={officialForm.priority === "media" ? "primary" : "secondary"}
-              usage={officialForm.priority === "media" ? "info" : "general"}
-              className="h-10"
-            >
-              Media
-            </CommonButton>
-          </div>
-          <label className="flex h-11 items-center gap-3 rounded-xl border border-[#d1d9e9] bg-white px-3 text-sm font-medium text-[#151b28]">
-            <input
-              type="checkbox"
-              checked={isRecurringItem(officialForm.repurchaseState)}
-              onChange={(event) =>
-                setOfficialForm((current) => ({
-                  ...current,
-                  repurchaseState: event.target.checked ? "precisa_recompra" : "nao_recompra",
-                }))
-              }
-              className="h-4 w-4 rounded border-[#b9c4d7] accent-[#3555d2]"
-            />
-            Compra recorrente
-          </label>
-          <CommonButton
-            type="submit"
-            disabled={pendingAction === "official:submit"}
-            variant="primary"
-            usage="info"
-            showIconLeft
-            iconLeft={
-              pendingAction === "official:submit" ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save aria-hidden="true" className="h-4 w-4" />
-              )
-            }
-            className="h-11 w-full px-4"
-          >
-            {editingOfficialItemId ? "Salvar item oficial" : "Criar item oficial"}
-          </CommonButton>
+            </DrawerFieldRow>
+          </DrawerSection>
         </form>
       </Drawer>
 
@@ -2496,116 +2767,124 @@ export function WishlistAppView({
           setPersonalForm(defaultPersonalForm);
         }}
         title={editingPersonalItemId ? "Editar item pessoal" : "Novo item pessoal"}
+        secondaryAction={{
+          label: "Cancelar",
+          onClick: () => {
+            setIsPersonalDrawerOpen(false);
+            setEditingPersonalItemId(null);
+            setPersonalForm(defaultPersonalForm);
+          },
+        }}
+        primaryAction={{
+          label: editingPersonalItemId ? "Salvar item pessoal" : "Criar item pessoal",
+          onClick: () => {
+            if (pendingAction === "personal:submit") {
+              return;
+            }
+            (document.getElementById("personal-item-form") as HTMLFormElement | null)?.requestSubmit();
+          },
+        }}
       >
-        <form onSubmit={submitPersonalForm} className="space-y-3">
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Nome</span>
-            <input
-              value={personalForm.name}
-              onChange={(event) => setPersonalForm((current) => ({ ...current, name: event.target.value }))}
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              required
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Link</span>
-            <input
-              value={personalForm.purchaseUrl}
-              onChange={(event) =>
-                setPersonalForm((current) => ({ ...current, purchaseUrl: event.target.value }))
-              }
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              placeholder="https://..."
-              required
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Imagem</span>
-            <input
-              value={personalForm.imageUrl}
-              onChange={(event) =>
-                setPersonalForm((current) => ({ ...current, imageUrl: event.target.value }))
-              }
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-              placeholder="https://..."
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Preco</span>
+        <form id="personal-item-form" onSubmit={submitPersonalForm} className="space-y-6">
+          <DrawerSection title="Propriedades">
+            <DrawerFieldRow label={propertyLabel(<Pencil aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
+              <input
+                value={personalForm.name}
+                onChange={(event) => setPersonalForm((current) => ({ ...current, name: event.target.value }))}
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
+                required
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link")} divider={false}>
+              <EditableLinkButtonField
+                value={personalForm.purchaseUrl}
+                onChange={(value) =>
+                  setPersonalForm((current) => ({ ...current, purchaseUrl: value }))
+                }
+                placeholder="https://..."
+                required
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem")} divider={false}>
+              <EditableLinkButtonField
+                value={personalForm.imageUrl}
+                onChange={(value) =>
+                  setPersonalForm((current) => ({ ...current, imageUrl: value }))
+                }
+                placeholder="https://..."
+              />
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={personalForm.price}
                 onChange={(event) =>
                   setPersonalForm((current) => ({ ...current, price: event.target.value }))
                 }
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 placeholder="149,90"
                 required
               />
-            </label>
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Categoria</span>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(renderCategoryIcon(personalForm.category, "h-4 w-4"), "Categoria")} divider={false}>
+              <div className="max-w-[320px]">
+                <Combobox
+                  variant="embedded"
+                  options={formCategoryOptions}
+                  value={personalForm.category}
+                  onChange={(value) =>
+                    setPersonalForm((current) => ({ ...current, category: value ?? current.category }))
+                  }
+                  placeholder="Selecione uma categoria"
+                  allowCustomValue
+                  onCreateOption={appendCustomCategoryOption}
+                />
+              </div>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<Flag aria-hidden="true" className="h-4 w-4" />, "Prioridade")} divider={false}>
+              <div className="max-w-[280px]">
+                <Combobox
+                  variant="embedded"
+                  options={priorityOptions}
+                  value={personalForm.priority}
+                  onChange={(value) =>
+                    setPersonalForm((current) => ({
+                      ...current,
+                      priority: (value as WishlistItemPriority | null) ?? current.priority,
+                    }))
+                  }
+                  placeholder="Selecione uma prioridade"
+                />
+              </div>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<Eye aria-hidden="true" className="h-4 w-4" />, "Visibilidade")} divider={false}>
+              <div className="flex flex-wrap gap-2">
+                {(["private", "public"] as PersonalItemVisibility[]).map((visibility) => (
+                  <Chip
+                    key={visibility}
+                    behavior="selectable"
+                    selected={personalForm.visibility === visibility}
+                    onClick={() => setPersonalForm((current) => ({ ...current, visibility }))}
+                    label={visibility === "private" ? "Privado" : "Publico"}
+                    type={personalForm.visibility === visibility ? "info" : "tertiary"}
+                    surface="neutral"
+                  />
+                ))}
+              </div>
+            </DrawerFieldRow>
+            <DrawerFieldRow label={propertyLabel(<RotateCcw aria-hidden="true" className="h-4 w-4" />, "Compra recorrente")} divider={false}>
               <input
-                value={personalForm.category}
+                type="checkbox"
+                checked={isRecurringItem(personalForm.repurchaseState)}
                 onChange={(event) =>
-                  setPersonalForm((current) => ({ ...current, category: event.target.value }))
+                  setPersonalForm((current) => ({
+                    ...current,
+                    repurchaseState: event.target.checked ? "precisa_recompra" : "nao_recompra",
+                  }))
                 }
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none focus:border-[#95a8cb]"
-                required
+                className="h-4 w-4 rounded border-[#b9c4d7] accent-[#3555d2]"
               />
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <CommonButton
-              type="button"
-              onClick={() => setPersonalForm((current) => ({ ...current, visibility: "private" }))}
-              variant={personalForm.visibility === "private" ? "primary" : "secondary"}
-              usage={personalForm.visibility === "private" ? "info" : "general"}
-              className="h-10"
-            >
-              Privado
-            </CommonButton>
-            <CommonButton
-              type="button"
-              onClick={() => setPersonalForm((current) => ({ ...current, visibility: "public" }))}
-              variant={personalForm.visibility === "public" ? "primary" : "secondary"}
-              usage={personalForm.visibility === "public" ? "info" : "general"}
-              className="h-10"
-            >
-              Publico
-            </CommonButton>
-          </div>
-          <label className="flex h-11 items-center gap-3 rounded-xl border border-[#d1d9e9] bg-white px-3 text-sm font-medium text-[#151b28]">
-            <input
-              type="checkbox"
-              checked={isRecurringItem(personalForm.repurchaseState)}
-              onChange={(event) =>
-                setPersonalForm((current) => ({
-                  ...current,
-                  repurchaseState: event.target.checked ? "precisa_recompra" : "nao_recompra",
-                }))
-              }
-              className="h-4 w-4 rounded border-[#b9c4d7] accent-[#3555d2]"
-            />
-            Compra recorrente
-          </label>
-          <CommonButton
-            type="submit"
-            disabled={pendingAction === "personal:submit"}
-            variant="primary"
-            usage="info"
-            showIconLeft
-            iconLeft={
-              pendingAction === "personal:submit" ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save aria-hidden="true" className="h-4 w-4" />
-              )
-            }
-            className="h-11 w-full px-4"
-          >
-            {editingPersonalItemId ? "Salvar item pessoal" : "Criar item pessoal"}
-          </CommonButton>
+            </DrawerFieldRow>
+          </DrawerSection>
         </form>
       </Drawer>
     </main>

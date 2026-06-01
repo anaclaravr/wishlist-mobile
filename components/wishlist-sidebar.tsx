@@ -70,7 +70,7 @@ export function WishlistSidebar({
     );
 
   return (
-    <aside className="ds-sidebar flex min-h-full min-w-0 flex-col border-b p-4 sm:p-5 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+    <aside className="ds-sidebar flex min-h-screen min-w-0 flex-col border-b p-4 sm:p-5 lg:sticky lg:top-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:border-b-0 lg:border-r">
       <div className="flex items-center justify-between gap-2">
         {isCollapsed ? (
           <div className="group/logo relative h-11 w-11 shrink-0">
@@ -122,7 +122,7 @@ export function WishlistSidebar({
         )}
       </div>
 
-      <nav className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+      <nav className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto pr-1 pb-4">
         <div>
           {!isCollapsed ? (
             <p className="px-2 text-[11px] font-medium uppercase text-[var(--ds-sidebar-section-title)]">Workspace</p>
@@ -144,7 +144,7 @@ export function WishlistSidebar({
 
       </nav>
 
-      <div className="mt-4 shrink-0 border-t border-[var(--ds-sidebar-border)] bg-[var(--ds-sidebar-bg)] pt-4">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-2 shrink-0 border-t border-[var(--ds-sidebar-border)] bg-[var(--ds-sidebar-bg)] px-4 pt-4 sm:-mx-5 sm:px-5">
         {!isCollapsed ? <p className="px-2 text-[11px] font-medium uppercase text-[var(--ds-sidebar-section-title)]">Ações</p> : null}
         <div className="mt-2 space-y-1">
           {adminHref ? (

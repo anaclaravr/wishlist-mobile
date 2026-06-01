@@ -176,6 +176,7 @@ type LegacySuggestionRow = {
 
 type AdminTaskStatus = "pending" | "in_progress" | "done";
 type AdminTaskPriority = "low" | "medium" | "high" | null;
+type AdminTaskCategory = "trabalho" | "estudos" | "pessoal";
 
 type AdminTaskRow = {
   id: string;
@@ -183,6 +184,7 @@ type AdminTaskRow = {
   notes: string | null;
   status: string | null;
   priority: string | null;
+  category: string | null;
   tags: string[] | null;
   dueAt: Date | string | null;
   createdByProfileId: string | null;
@@ -270,6 +272,7 @@ export type AdminTask = {
   notes: string | null;
   status: AdminTaskStatus;
   priority: AdminTaskPriority;
+  category: AdminTaskCategory;
   tags: string[];
   dueAt: string | null;
   createdByProfileId: string | null;
@@ -401,6 +404,13 @@ function normalizeAdminTaskPriority(value: string | null): AdminTaskPriority {
   return null;
 }
 
+function normalizeAdminTaskCategory(value: string | null): AdminTaskCategory {
+  if (value === "trabalho" || value === "estudos" || value === "pessoal") {
+    return value;
+  }
+  return "pessoal";
+}
+
 function toAdminTask(row: AdminTaskRow): AdminTask {
   return {
     id: row.id,
@@ -408,6 +418,7 @@ function toAdminTask(row: AdminTaskRow): AdminTask {
     notes: row.notes,
     status: normalizeAdminTaskStatus(row.status),
     priority: normalizeAdminTaskPriority(row.priority),
+    category: normalizeAdminTaskCategory(row.category),
     tags: (row.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
     dueAt: toIso(row.dueAt),
     createdByProfileId: row.createdByProfileId,
@@ -1342,6 +1353,7 @@ export async function listAdminTasks(input?: {
     ? sql`and (
         title ilike ${`%${query}%`}
         or coalesce(notes, '') ilike ${`%${query}%`}
+        or coalesce(category, '') ilike ${`%${query}%`}
       )`
     : sql``;
 
@@ -1359,6 +1371,7 @@ export async function listAdminTasks(input?: {
       notes,
       status,
       priority,
+      category,
       tags,
       due_at as "dueAt",
       created_by_profile_id as "createdByProfileId",
@@ -1401,6 +1414,7 @@ export async function createAdminTask(input: {
   notes?: string | null;
   status?: AdminTaskStatus;
   priority?: AdminTaskPriority;
+  category?: AdminTaskCategory;
   tags?: string[];
   dueAt?: string | null;
   createdByProfileId: string;
@@ -1414,6 +1428,7 @@ export async function createAdminTask(input: {
       notes,
       status,
       priority,
+      category,
       tags,
       due_at,
       created_by_profile_id
@@ -1423,6 +1438,7 @@ export async function createAdminTask(input: {
       ${input.notes?.trim() || null},
       ${input.status ?? "pending"},
       ${input.priority ?? null},
+      ${input.category ?? "pessoal"},
       ${normalizedTags},
       ${input.dueAt ? new Date(input.dueAt) : null},
       ${input.createdByProfileId}
@@ -1433,6 +1449,7 @@ export async function createAdminTask(input: {
       notes,
       status,
       priority,
+      category,
       tags,
       due_at as "dueAt",
       created_by_profile_id as "createdByProfileId",
@@ -1450,6 +1467,7 @@ export async function updateAdminTask(input: {
   notes?: string | null;
   status?: AdminTaskStatus;
   priority?: AdminTaskPriority;
+  category?: AdminTaskCategory;
   tags?: string[];
   dueAt?: string | null;
 }) {
@@ -1462,6 +1480,7 @@ export async function updateAdminTask(input: {
       notes = ${input.notes?.trim() || null},
       status = ${input.status ?? "pending"},
       priority = ${input.priority ?? null},
+      category = ${input.category ?? "pessoal"},
       tags = ${normalizedTags},
       due_at = ${input.dueAt ? new Date(input.dueAt) : null},
       completed_at = case when ${input.status ?? "pending"} = 'done' then coalesce(completed_at, now()) else null end,
@@ -1473,6 +1492,7 @@ export async function updateAdminTask(input: {
       notes,
       status,
       priority,
+      category,
       tags,
       due_at as "dueAt",
       created_by_profile_id as "createdByProfileId",
@@ -1504,6 +1524,7 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
         notes,
         status,
         priority,
+        category,
         tags,
         due_at as "dueAt",
         created_by_profile_id as "createdByProfileId",
@@ -1532,6 +1553,7 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
       notes,
       status,
       priority,
+      category,
       tags,
       due_at as "dueAt",
       created_by_profile_id as "createdByProfileId",

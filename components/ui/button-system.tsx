@@ -416,6 +416,7 @@ export function MenuIconButton({
   menu = true,
   items = [],
   className,
+  buttonClassName,
 }: {
   children: ReactNode;
   ariaLabel: string;
@@ -429,6 +430,7 @@ export function MenuIconButton({
   menu?: boolean;
   items?: MenuButtonItem[];
   className?: string;
+  buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -452,6 +454,7 @@ export function MenuIconButton({
         size={size}
         selected={selected ?? open}
         title={tooltip ? ariaLabel : undefined}
+        className={buttonClassName}
         onClick={() => {
           if (menu) setOpen((current) => !current);
         }}
@@ -512,6 +515,7 @@ export function SwitchButton<TValue extends string>({
             role="tab"
             aria-selected={selected}
             aria-label={item.ariaLabel || item.label || undefined}
+            title={item.ariaLabel || item.label || undefined}
             disabled={disabled || item.disabled}
             onClick={() => onChange(item.value)}
             className={cx(

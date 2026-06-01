@@ -21,7 +21,19 @@ export const PERMISSION_KEYS = [
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
 const ROLE_PERMISSIONS: Record<AccessRole, PermissionKey[]> = {
-  admin: [...PERMISSION_KEYS],
+  admin: [
+    "wishlist.read",
+    "wishlist.acquire.toggle",
+    "wishlist.official.create",
+    "wishlist.official.edit",
+    "wishlist.official.archive",
+    "wishlist.official.delete",
+    "admin.access",
+    "admin.profiles.manage",
+    "admin.wishlist.update",
+    "admin.suggestions.read",
+    "admin.tasks.manage",
+  ],
   editor: [
     "wishlist.read",
     "wishlist.favorites.manage",

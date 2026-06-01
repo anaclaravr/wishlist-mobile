@@ -11,6 +11,7 @@ const createTaskSchema = z.object({
   notes: z.string().trim().max(5000).optional(),
   status: taskStatusSchema.optional(),
   priority: z.enum(["low", "medium", "high"]).nullable().optional(),
+  category: z.enum(["trabalho", "estudos", "pessoal"]).optional(),
   tags: z.array(z.string().trim().min(1).max(32)).max(8).optional(),
   dueAt: z.string().datetime().nullable().optional(),
 });
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       notes: parsed.data.notes ?? null,
       status: parsed.data.status ?? "pending",
       priority: parsed.data.priority ?? null,
+      category: parsed.data.category ?? "pessoal",
       tags: parsed.data.tags ?? [],
       dueAt: parsed.data.dueAt ?? null,
       createdByProfileId: session.profileId,

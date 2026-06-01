@@ -214,6 +214,11 @@ await sql`
 `;
 
 await sql`
+  alter table admin_tasks
+  add column if not exists category text not null default 'pessoal'
+`;
+
+await sql`
   do $$
   begin
     if exists (
@@ -232,6 +237,15 @@ await sql`
       add constraint admin_tasks_priority_check
       check (priority in ('low', 'medium', 'high') or priority is null);
     end if;
+
+    if exists (
+      select 1 from pg_constraint where conname = 'admin_tasks_category_check'
+    ) then
+      alter table admin_tasks drop constraint admin_tasks_category_check;
+    end if;
+    alter table admin_tasks
+    add constraint admin_tasks_category_check
+    check (category in ('trabalho', 'estudos', 'pessoal'));
   end
   $$;
 `;

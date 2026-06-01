@@ -15,19 +15,23 @@ import {
   Flag,
   Heart,
   Image as ImageIcon,
+  Layers3,
   Link as LinkIcon,
   Loader2,
   Plus,
   RotateCcw,
-  Save,
   Search,
+  Shirt,
+  ShoppingCart,
   Trash2,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { WishlistSidebar } from "@/components/wishlist-sidebar";
-import { Drawer } from "@/components/ui/drawer";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { Chip } from "@/components/ui/chip";
+import { Drawer, DrawerFieldRow, DrawerSection } from "@/components/ui/drawer";
+import { EditableLinkButtonField } from "@/components/ui/editable-link-button-field";
+import { Tabs } from "@/components/ui/tabs";
 import type {
   ItemRepurchaseState,
   PersonalItemSuggestion,
@@ -91,6 +95,15 @@ function formatCreatedLabel(createdAt: string) {
     month: "2-digit",
     year: "2-digit",
   }).format(new Date(createdAt));
+}
+
+function propertyLabel(icon: ReactNode, label: string) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="text-[#7a8398]">{icon}</span>
+      <span>{label}</span>
+    </span>
+  );
 }
 
 export function AdminWishlistPanel({
@@ -253,6 +266,9 @@ export function AdminWishlistPanel({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
     setMessage(null);
@@ -306,6 +322,9 @@ export function AdminWishlistPanel({
   async function toggleArchive(item: WishlistItem) {
     const nextArchived = !item.archivedAt;
     const pendingKey = `archive:${item.id}`;
+    if (pendingItemAction === pendingKey) {
+      return;
+    }
     setPendingItemAction(pendingKey);
     setError(null);
     setMessage(null);
@@ -346,6 +365,9 @@ export function AdminWishlistPanel({
     }
 
     const pendingKey = `delete:${item.id}`;
+    if (pendingItemAction === pendingKey) {
+      return;
+    }
     setPendingItemAction(pendingKey);
     setError(null);
     setMessage(null);
@@ -450,13 +472,13 @@ export function AdminWishlistPanel({
             </div>
 
             <div className="mt-5 overflow-x-auto">
-              <SegmentedTabs<ListFilter>
+              <Tabs<ListFilter>
                 value={listFilter}
                 onChange={setListFilter}
                 items={[
-                  { id: "ativos", label: "Ativos", count: activeItems.length },
-                  { id: "arquivados", label: "Arquivados", count: archivedItems.length },
-                  { id: "todos", label: "Todos", count: items.length },
+                  { id: "ativos", label: "Ativos", count: activeItems.length, icon: <ShoppingCart aria-hidden="true" className="h-5 w-5" /> },
+                  { id: "arquivados", label: "Arquivados", count: archivedItems.length, icon: <Archive aria-hidden="true" className="h-5 w-5" /> },
+                  { id: "todos", label: "Todos", count: items.length, icon: <Layers3 aria-hidden="true" className="h-5 w-5" /> },
                 ]}
               />
             </div>
@@ -633,8 +655,7 @@ export function AdminWishlistPanel({
                               <button
                                 type="button"
                                 onClick={() => toggleArchive(item)}
-                                disabled={pendingArchive}
-                                className="inline-flex h-10 items-center gap-2 rounded-full bg-[#1b2235] px-3 text-sm font-medium text-white transition hover:bg-[#141b2d] disabled:opacity-60"
+                                className="inline-flex h-10 items-center gap-2 rounded-full bg-[#1b2235] px-3 text-sm font-medium text-white transition hover:bg-[#141b2d]"
                               >
                                 {pendingArchive ? (
                                   <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
@@ -648,8 +669,7 @@ export function AdminWishlistPanel({
                               <button
                                 type="button"
                                 onClick={() => deleteItem(item)}
-                                disabled={pendingDelete}
-                                className="inline-flex h-10 items-center gap-2 rounded-full bg-[#bb334b] px-3 text-sm font-medium text-white transition hover:bg-[#a32840] disabled:opacity-60"
+                                className="inline-flex h-10 items-center gap-2 rounded-full bg-[#bb334b] px-3 text-sm font-medium text-white transition hover:bg-[#a32840]"
                               >
                                 {pendingDelete ? (
                                   <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
@@ -736,62 +756,69 @@ export function AdminWishlistPanel({
           resetForm();
         }}
         title={editingItemId ? "Editar item" : "Novo item"}
+        secondaryAction={{
+          label: "Cancelar",
+          onClick: () => {
+            setIsItemDrawerOpen(false);
+            resetForm();
+          },
+        }}
+        primaryAction={{
+          label: editingItemId ? "Salvar alteracoes" : "Adicionar item",
+          onClick: () => {
+            if (isSubmitting) {
+              return;
+            }
+            (document.getElementById("admin-wishlist-item-form") as HTMLFormElement | null)?.requestSubmit();
+          },
+        }}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <label className="block space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Nome</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba] focus:border-[#95a8cb]"
-              maxLength={120}
-              required
-            />
-          </label>
+        <form id="admin-wishlist-item-form" onSubmit={handleSubmit} className="space-y-6">
+          <DrawerSection title="Propriedades">
+            <DrawerFieldRow label={propertyLabel(<Edit3 aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba]"
+                maxLength={120}
+                required
+              />
+            </DrawerFieldRow>
 
-          <label className="block space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Link de compra</span>
-            <input
-              value={purchaseUrl}
-              onChange={(event) => setPurchaseUrl(event.target.value)}
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba] focus:border-[#95a8cb]"
-              inputMode="url"
-              placeholder="https://..."
-              required
-            />
-          </label>
+            <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link de compra")} divider={false}>
+              <EditableLinkButtonField
+                value={purchaseUrl}
+                onChange={setPurchaseUrl}
+                placeholder="https://..."
+                required
+              />
+            </DrawerFieldRow>
 
-          <label className="block space-y-1.5">
-            <span className="text-[11px] font-medium text-[#7a8298]">Imagem do item</span>
-            <input
-              value={imageUrl}
-              onChange={(event) => setImageUrl(event.target.value)}
-              className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba] focus:border-[#95a8cb]"
-              inputMode="url"
-              placeholder="https://..."
-            />
-          </label>
+            <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem do item")} divider={false}>
+              <EditableLinkButtonField
+                value={imageUrl}
+                onChange={setImageUrl}
+                placeholder="https://..."
+              />
+            </DrawerFieldRow>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Preco</span>
+            <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={price}
                 onChange={(event) => setPrice(event.target.value)}
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba] focus:border-[#95a8cb]"
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba]"
                 inputMode="decimal"
                 placeholder="149,90"
                 required
               />
-            </label>
+            </DrawerFieldRow>
 
-            <label className="block space-y-1.5">
-              <span className="text-[11px] font-medium text-[#7a8298]">Categoria</span>
+            <DrawerFieldRow label={propertyLabel(<Shirt aria-hidden="true" className="h-4 w-4" />, "Categoria")} divider={false}>
               <input
                 list="wishlist-categories"
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="h-11 w-full rounded-xl border border-[#d1d9e9] px-3 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba] focus:border-[#95a8cb]"
+                className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba]"
                 maxLength={60}
                 required
               />
@@ -800,58 +827,39 @@ export function AdminWishlistPanel({
                   <option key={itemCategory} value={itemCategory} />
                 ))}
               </datalist>
-            </label>
-          </div>
+            </DrawerFieldRow>
 
-          <div className="space-y-2">
-            <span className="text-[11px] font-medium text-[#7a8298]">Prioridade</span>
-            <div className="grid grid-cols-3 gap-2">
-              {priorities.map((itemPriority) => {
-                const active = priority === itemPriority;
+            <DrawerFieldRow label={propertyLabel(<Flag aria-hidden="true" className="h-4 w-4" />, "Prioridade")} divider={false}>
+              <div className="flex flex-wrap gap-2">
+                {priorities.map((itemPriority) => {
+                  const active = priority === itemPriority;
 
-                return (
-                  <button
-                    key={itemPriority}
-                    type="button"
-                    onClick={() => setPriority(itemPriority)}
-                    className={`h-10 rounded-xl border text-sm font-medium transition ${
-                      active ? "border-[#1a2235] bg-[#1a2235] text-white" : "border-[#d1d9e9] bg-white text-[#4e576d]"
-                    }`}
-                  >
-                    {priorityLabels[itemPriority]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                  return (
+                    <Chip
+                      key={itemPriority}
+                      behavior="selectable"
+                      selected={active}
+                      onClick={() => setPriority(itemPriority)}
+                      label={priorityLabels[itemPriority]}
+                      type={active ? "info" : "tertiary"}
+                      surface="neutral"
+                      showIconLeft
+                      iconLeft={<Flag aria-hidden="true" className="h-3.5 w-3.5" />}
+                    />
+                  );
+                })}
+              </div>
+            </DrawerFieldRow>
 
-          <div className="space-y-2">
-            <span className="text-[11px] font-medium text-[#7a8298]">Recompra</span>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { value: "nao_recompra", label: "Nao e recompra" },
-                  { value: "precisa_recompra", label: "Precisa agora" },
-                  { value: "ainda_tem", label: "Ainda tem" },
-                ] as Array<{ value: ItemRepurchaseState; label: string }>
-              ).map((repurchaseOption) => {
-                const active = repurchaseState === repurchaseOption.value;
-
-                return (
-                  <button
-                    key={repurchaseOption.value}
-                    type="button"
-                    onClick={() => setRepurchaseState(repurchaseOption.value)}
-                    className={`h-10 rounded-xl border text-xs font-medium transition ${
-                      active ? "border-[#1a2235] bg-[#1a2235] text-white" : "border-[#d1d9e9] bg-white text-[#4e576d]"
-                    }`}
-                  >
-                    {repurchaseOption.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+            <DrawerFieldRow label={propertyLabel(<RotateCcw aria-hidden="true" className="h-4 w-4" />, "Compra recorrente")} divider={false}>
+              <input
+                type="checkbox"
+                checked={repurchaseState === "precisa_recompra" || repurchaseState === "ainda_tem"}
+                onChange={(event) => setRepurchaseState(event.target.checked ? "precisa_recompra" : "nao_recompra")}
+                className="h-4 w-4 rounded border-[#b9c4d7] accent-[#3555d2]"
+              />
+            </DrawerFieldRow>
+          </DrawerSection>
 
           <div className="overflow-hidden rounded-xl border border-[#d8dfed] bg-[#f2f5fb]">
             {imageUrl.trim() ? (
@@ -862,33 +870,6 @@ export function AdminWishlistPanel({
                 <span className="text-[11px] font-medium uppercase">Preview</span>
               </div>
             )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setIsItemDrawerOpen(false);
-                resetForm();
-              }}
-              className="inline-flex h-11 items-center justify-center rounded-full border border-[#d3dbeb] text-sm font-medium text-[#4e576d]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#131a2b] px-4 text-sm font-medium text-white transition hover:bg-[#0e1525] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting ? (
-                <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
-              ) : editingItemId ? (
-                <Save aria-hidden="true" className="h-5 w-5" />
-              ) : (
-                <Plus aria-hidden="true" className="h-5 w-5" />
-              )}
-              {editingItemId ? "Salvar alteracoes" : "Adicionar item"}
-            </button>
           </div>
         </form>
       </Drawer>
