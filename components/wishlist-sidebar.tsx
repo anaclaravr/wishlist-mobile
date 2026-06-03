@@ -17,6 +17,7 @@ type SidebarPage =
   | "admin-pages"
   | "admin-pages-wishlist"
   | "admin-pages-tasks"
+  | "admin-pages-portfolio"
   | "admin-general";
 
 function cx(...values: Array<string | false | null | undefined>) {
@@ -57,6 +58,7 @@ export function WishlistSidebar({
     activePage === "admin-pages" ||
     activePage === "admin-pages-wishlist" ||
     activePage === "admin-pages-tasks" ||
+    activePage === "admin-pages-portfolio" ||
     activePage === "admin-general";
 
   const topLevelItemClass = (active: boolean) =>

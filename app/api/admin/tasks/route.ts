@@ -8,10 +8,10 @@ import { getErrorResponse, PublicError } from "@/lib/errors";
 const taskStatusSchema = z.enum(["pending", "in_progress", "done"]);
 const createTaskSchema = z.object({
   title: z.string().trim().min(1, "Informe o titulo da tarefa.").max(180),
-  notes: z.string().trim().max(5000).optional(),
+  notes: z.string().trim().max(5000).nullable().optional(),
   status: taskStatusSchema.optional(),
   priority: z.enum(["low", "medium", "high"]).nullable().optional(),
-  category: z.enum(["trabalho", "estudos", "pessoal"]).optional(),
+  category: z.string().trim().min(1).max(60).optional(),
   tags: z.array(z.string().trim().min(1).max(32)).max(8).optional(),
   dueAt: z.string().datetime().nullable().optional(),
 });

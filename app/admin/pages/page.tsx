@@ -1,4 +1,4 @@
-import { CheckSquare, Gift, LayoutPanelTop } from "lucide-react";
+import { Briefcase, CheckSquare, Gift, LayoutPanelTop } from "lucide-react";
 
 import { AdminAccessGate } from "@/components/admin-access-gate";
 import { AdminLayout } from "@/components/admin-layout";
@@ -36,6 +36,13 @@ export default async function AdminPagesHome() {
           details="Configura labels do Kanban, paginação e elementos visiveis dos cards."
           icon={CheckSquare}
           href="/admin/pages/tasks"
+        />
+        <PageModuleCard
+          title="Portfolio"
+          subtitle="Pagina publica"
+          details="Configura apresentacao profissional, links e case studies para recrutadores."
+          icon={Briefcase}
+          href="/admin/pages/portfolio"
         />
         <PageModuleCard
           title="Futuras paginas"

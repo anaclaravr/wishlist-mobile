@@ -14,6 +14,7 @@ type AdminActivePage =
   | "admin-pages"
   | "admin-pages-wishlist"
   | "admin-pages-tasks"
+  | "admin-pages-portfolio"
   | "admin-general";
 
 export function AdminLayout({
@@ -77,6 +78,12 @@ export function AdminLayout({
         { label: "Admin", href: "/admin", icon: <Settings2 aria-hidden="true" /> },
         { label: "Pages", href: "/admin/pages", icon: <LayoutPanelTop aria-hidden="true" /> },
         { label: "Tasks", icon: <CheckSquare aria-hidden="true" /> },
+      ],
+      "admin-pages-portfolio": [
+        { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },
+        { label: "Admin", href: "/admin", icon: <Settings2 aria-hidden="true" /> },
+        { label: "Pages", href: "/admin/pages", icon: <LayoutPanelTop aria-hidden="true" /> },
+        { label: "Portfolio", icon: <Briefcase aria-hidden="true" /> },
       ],
       "admin-general": [
         { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },

@@ -22,6 +22,11 @@ import {
   normalizeTaskPageSettings,
   type TaskPageSettings,
 } from "@/lib/task-page-settings";
+import {
+  DEFAULT_PORTFOLIO_PAGE_SETTINGS,
+  normalizePortfolioPageSettings,
+  type PortfolioPageSettings,
+} from "@/lib/portfolio-page-settings";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -176,7 +181,7 @@ type LegacySuggestionRow = {
 
 type AdminTaskStatus = "pending" | "in_progress" | "done";
 type AdminTaskPriority = "low" | "medium" | "high" | null;
-type AdminTaskCategory = "trabalho" | "estudos" | "pessoal";
+type AdminTaskCategory = string;
 
 type AdminTaskRow = {
   id: string;
@@ -405,10 +410,7 @@ function normalizeAdminTaskPriority(value: string | null): AdminTaskPriority {
 }
 
 function normalizeAdminTaskCategory(value: string | null): AdminTaskCategory {
-  if (value === "trabalho" || value === "estudos" || value === "pessoal") {
-    return value;
-  }
-  return "pessoal";
+  return value?.trim() || "pessoal";
 }
 
 function toAdminTask(row: AdminTaskRow): AdminTask {
@@ -1438,7 +1440,7 @@ export async function createAdminTask(input: {
       ${input.notes?.trim() || null},
       ${input.status ?? "pending"},
       ${input.priority ?? null},
-      ${input.category ?? "pessoal"},
+      ${input.category?.trim() || "pessoal"},
       ${normalizedTags},
       ${input.dueAt ? new Date(input.dueAt) : null},
       ${input.createdByProfileId}
@@ -1480,7 +1482,7 @@ export async function updateAdminTask(input: {
       notes = ${input.notes?.trim() || null},
       status = ${input.status ?? "pending"},
       priority = ${input.priority ?? null},
-      category = ${input.category ?? "pessoal"},
+      category = ${input.category?.trim() || "pessoal"},
       tags = ${normalizedTags},
       due_at = ${input.dueAt ? new Date(input.dueAt) : null},
       completed_at = case when ${input.status ?? "pending"} = 'done' then coalesce(completed_at, now()) else null end,
@@ -1648,4 +1650,69 @@ export async function upsertTaskPageSettingsByWishlistId(input: {
 
   const normalized = normalizeTaskPageSettings(toPageSettings(row).config);
   return normalized;
+}
+
+export async function getPortfolioPageSettingsByWishlistId(wishlistId: string) {
+  const sql = getSql();
+  const [row] = await sql<PageSettingsRow[]>`
+    select
+      id,
+      wishlist_id as "wishlistId",
+      page_key as "pageKey",
+      config,
+      updated_by_profile_id as "updatedByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from page_settings
+    where wishlist_id = ${wishlistId}
+      and page_key = 'portfolio'
+    limit 1
+  `;
+
+  if (!row) {
+    return DEFAULT_PORTFOLIO_PAGE_SETTINGS;
+  }
+
+  return normalizePortfolioPageSettings(row.config);
+}
+
+export async function upsertPortfolioPageSettingsByWishlistId(input: {
+  wishlistId: string;
+  profileId: string;
+  settings: PortfolioPageSettings;
+}) {
+  const sql = getSql();
+  const [row] = await sql<PageSettingsRow[]>`
+    insert into page_settings (
+      wishlist_id,
+      page_key,
+      config,
+      updated_by_profile_id
+    )
+    values (
+      ${input.wishlistId},
+      'portfolio',
+      ${JSON.stringify(input.settings)}::jsonb,
+      ${input.profileId}
+    )
+    on conflict (wishlist_id, page_key)
+    do update set
+      config = excluded.config,
+      updated_by_profile_id = excluded.updated_by_profile_id,
+      updated_at = now()
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      page_key as "pageKey",
+      config,
+      updated_by_profile_id as "updatedByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) {
+    throw new PublicError("Nao foi possivel salvar configuracoes de Portfolio.", 500);
+  }
+
+  return normalizePortfolioPageSettings(toPageSettings(row).config);
 }

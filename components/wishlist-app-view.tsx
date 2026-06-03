@@ -20,6 +20,7 @@ import {
   Flame,
   Gamepad2,
   Gem,
+  GraduationCap,
   Grid2X2,
   Home,
   Heart,
@@ -30,6 +31,7 @@ import {
   List,
   Minus,
   MoreHorizontal,
+  Paintbrush,
   Pencil,
   Plus,
   RotateCcw,
@@ -39,6 +41,7 @@ import {
   Sparkles,
   ShoppingCart,
   Trash2,
+  Tags,
   UserRound,
   UtensilsCrossed,
 } from "lucide-react";
@@ -107,6 +110,21 @@ type PersonalForm = OfficialForm & {
   visibility: PersonalItemVisibility;
 };
 
+type LinkPreviewResponse = {
+  name?: string;
+  imageUrl?: string;
+  price?: string;
+  error?: string;
+};
+
+type LinkPreviewState = {
+  isLoading: boolean;
+  error: string | null;
+};
+
+type AutoFillField = "name" | "imageUrl" | "price";
+type AutoFillTouchedFields = Record<AutoFillField, boolean>;
+
 type AvailabilityFilter = "todos" | "disponiveis" | "adquiridos";
 type PriorityFilter = "todas" | WishlistItemPriority;
 type RepurchaseFilter = "todas" | ItemRepurchaseState;
@@ -136,6 +154,14 @@ const defaultPersonalForm: PersonalForm = {
   ...defaultOfficialForm,
   visibility: "private",
 };
+
+function createAutoFillTouchedFields(): AutoFillTouchedFields {
+  return {
+    name: false,
+    imageUrl: false,
+    price: false,
+  };
+}
 
 const defaultFilterState: FilterState = {
   category: "Todas",
@@ -186,6 +212,54 @@ function parseHttpUrl(value: string) {
   } catch {
     return "";
   }
+}
+
+function shouldApplyPreviewField(
+  field: AutoFillField,
+  currentValue: string,
+  touchedFields: AutoFillTouchedFields,
+  autoFilledValues: Partial<Record<AutoFillField, string>>,
+) {
+  return (
+    !touchedFields[field] &&
+    (!currentValue.trim() || currentValue === (autoFilledValues[field] ?? ""))
+  );
+}
+
+function applyLinkPreviewToForm<T extends OfficialForm>(
+  currentForm: T,
+  result: LinkPreviewResponse,
+  touchedFields: AutoFillTouchedFields,
+  autoFilledValues: Partial<Record<AutoFillField, string>>,
+) {
+  let nextForm = currentForm;
+  const nextAutoFilledValues = { ...autoFilledValues };
+
+  if (
+    result.name &&
+    shouldApplyPreviewField("name", currentForm.name, touchedFields, autoFilledValues)
+  ) {
+    nextForm = { ...nextForm, name: result.name };
+    nextAutoFilledValues.name = result.name;
+  }
+
+  if (
+    result.imageUrl &&
+    shouldApplyPreviewField("imageUrl", currentForm.imageUrl, touchedFields, autoFilledValues)
+  ) {
+    nextForm = { ...nextForm, imageUrl: result.imageUrl };
+    nextAutoFilledValues.imageUrl = result.imageUrl;
+  }
+
+  if (
+    result.price &&
+    shouldApplyPreviewField("price", currentForm.price, touchedFields, autoFilledValues)
+  ) {
+    nextForm = { ...nextForm, price: result.price };
+    nextAutoFilledValues.price = result.price;
+  }
+
+  return { form: nextForm, autoFilledValues: nextAutoFilledValues };
 }
 
 function matchesTextQuery(
@@ -254,10 +328,14 @@ function priorityLabel(priority: WishlistItemPriority) {
 }
 
 function categoryIcon(category: string | null | undefined) {
-  const normalized = (category ?? "").trim().toLowerCase();
+  const normalized = (category ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
   if (!normalized || normalized === "geral") {
-    return Layers3;
+    return Tags;
   }
   if (/(roupa|camisa|vestido|saia|calca|jaqueta|moda|blusa|look)/.test(normalized)) {
     return Shirt;
@@ -271,10 +349,16 @@ function categoryIcon(category: string | null | undefined) {
   if (/(livro|book|leitura|revista)/.test(normalized)) {
     return BookOpen;
   }
+  if (/(estudo|escola|curso|faculdade|aula)/.test(normalized)) {
+    return GraduationCap;
+  }
   if (/(game|jogo|console)/.test(normalized)) {
     return Gamepad2;
   }
-  if (/(beleza|make|perfume|skincare|cosmet)/.test(normalized)) {
+  if (/(maquiagem|make|batom|base|rimel|blush)/.test(normalized)) {
+    return Paintbrush;
+  }
+  if (/(beleza|perfume|skincare|cosmet)/.test(normalized)) {
     return Sparkles;
   }
   if (/(joia|acessorio|anel|colar|brinco)/.test(normalized)) {
@@ -287,7 +371,7 @@ function categoryIcon(category: string | null | undefined) {
     return UtensilsCrossed;
   }
 
-  return Layers3;
+  return Tags;
 }
 
 function renderCategoryIcon(
@@ -352,6 +436,14 @@ export function WishlistAppView({
   const [editingPersonalItemId, setEditingPersonalItemId] = useState<string | null>(null);
   const [officialForm, setOfficialForm] = useState<OfficialForm>(defaultOfficialForm);
   const [personalForm, setPersonalForm] = useState<PersonalForm>(defaultPersonalForm);
+  const [officialLinkPreview, setOfficialLinkPreview] = useState<LinkPreviewState>({
+    isLoading: false,
+    error: null,
+  });
+  const [personalLinkPreview, setPersonalLinkPreview] = useState<LinkPreviewState>({
+    isLoading: false,
+    error: null,
+  });
   const [customCategoryOptions, setCustomCategoryOptions] = useState<ComboboxOption[]>([]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -359,6 +451,16 @@ export function WishlistAppView({
   const filterPopoverRef = useRef<HTMLDivElement | null>(null);
   const sortPopoverRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const officialAutoFillTouchedFieldsRef = useRef<AutoFillTouchedFields>(
+    createAutoFillTouchedFields(),
+  );
+  const personalAutoFillTouchedFieldsRef = useRef<AutoFillTouchedFields>(
+    createAutoFillTouchedFields(),
+  );
+  const officialAutoFilledValuesRef = useRef<Partial<Record<AutoFillField, string>>>({});
+  const personalAutoFilledValuesRef = useRef<Partial<Record<AutoFillField, string>>>({});
+  const officialPurchaseUrlEditedRef = useRef(false);
+  const personalPurchaseUrlEditedRef = useRef(false);
 
   function can(permission: PermissionKey) {
     return hasPermission(access.role, permission);
@@ -874,9 +976,180 @@ export function WishlistAppView({
     }
   }
 
+  function resetOfficialAutoFillState() {
+    officialAutoFillTouchedFieldsRef.current = createAutoFillTouchedFields();
+    officialAutoFilledValuesRef.current = {};
+    officialPurchaseUrlEditedRef.current = false;
+    setOfficialLinkPreview({ isLoading: false, error: null });
+  }
+
+  function resetPersonalAutoFillState() {
+    personalAutoFillTouchedFieldsRef.current = createAutoFillTouchedFields();
+    personalAutoFilledValuesRef.current = {};
+    personalPurchaseUrlEditedRef.current = false;
+    setPersonalLinkPreview({ isLoading: false, error: null });
+  }
+
+  function markOfficialAutoFillFieldTouched(field: AutoFillField) {
+    officialAutoFillTouchedFieldsRef.current = {
+      ...officialAutoFillTouchedFieldsRef.current,
+      [field]: true,
+    };
+  }
+
+  function markPersonalAutoFillFieldTouched(field: AutoFillField) {
+    personalAutoFillTouchedFieldsRef.current = {
+      ...personalAutoFillTouchedFieldsRef.current,
+      [field]: true,
+    };
+  }
+
+  function handleOfficialPurchaseUrlChange(value: string) {
+    officialPurchaseUrlEditedRef.current = true;
+    setOfficialForm((current) => ({ ...current, purchaseUrl: value }));
+  }
+
+  function handlePersonalPurchaseUrlChange(value: string) {
+    personalPurchaseUrlEditedRef.current = true;
+    setPersonalForm((current) => ({ ...current, purchaseUrl: value }));
+  }
+
+  useEffect(() => {
+    const value = officialForm.purchaseUrl.trim();
+    const previewUrl = parseHttpUrl(value);
+
+    if (!isOfficialDrawerOpen || !officialPurchaseUrlEditedRef.current || !previewUrl) {
+      setOfficialLinkPreview({ isLoading: false, error: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setOfficialLinkPreview({ isLoading: true, error: null });
+
+      try {
+        const response = await fetch("/api/link-preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: previewUrl }),
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as LinkPreviewResponse;
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Nao foi possivel analisar este link.");
+        }
+
+        setOfficialForm((currentForm) => {
+          const applied = applyLinkPreviewToForm(
+            currentForm,
+            result,
+            officialAutoFillTouchedFieldsRef.current,
+            officialAutoFilledValuesRef.current,
+          );
+          officialAutoFilledValuesRef.current = applied.autoFilledValues;
+          return applied.form;
+        });
+        setOfficialLinkPreview({
+          isLoading: false,
+          error:
+            result.name || result.imageUrl || result.price
+              ? null
+              : "Nao encontrei dados para preencher.",
+        });
+      } catch (previewError) {
+        if (previewError instanceof DOMException && previewError.name === "AbortError") {
+          return;
+        }
+
+        setOfficialLinkPreview({
+          isLoading: false,
+          error:
+            previewError instanceof Error
+              ? previewError.message
+              : "Nao foi possivel analisar este link.",
+        });
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isOfficialDrawerOpen, officialForm.purchaseUrl]);
+
+  useEffect(() => {
+    const value = personalForm.purchaseUrl.trim();
+    const previewUrl = parseHttpUrl(value);
+
+    if (!isPersonalDrawerOpen || !personalPurchaseUrlEditedRef.current || !previewUrl) {
+      setPersonalLinkPreview({ isLoading: false, error: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setPersonalLinkPreview({ isLoading: true, error: null });
+
+      try {
+        const response = await fetch("/api/link-preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: previewUrl }),
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as LinkPreviewResponse;
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Nao foi possivel analisar este link.");
+        }
+
+        setPersonalForm((currentForm) => {
+          const applied = applyLinkPreviewToForm(
+            currentForm,
+            result,
+            personalAutoFillTouchedFieldsRef.current,
+            personalAutoFilledValuesRef.current,
+          );
+          personalAutoFilledValuesRef.current = applied.autoFilledValues;
+          return applied.form;
+        });
+        setPersonalLinkPreview({
+          isLoading: false,
+          error:
+            result.name || result.imageUrl || result.price
+              ? null
+              : "Nao encontrei dados para preencher.",
+        });
+      } catch (previewError) {
+        if (previewError instanceof DOMException && previewError.name === "AbortError") {
+          return;
+        }
+
+        setPersonalLinkPreview({
+          isLoading: false,
+          error:
+            previewError instanceof Error
+              ? previewError.message
+              : "Nao foi possivel analisar este link.",
+        });
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isPersonalDrawerOpen, personalForm.purchaseUrl]);
+
   function openCreateOfficialDrawer() {
     setEditingOfficialItemId(null);
     setOfficialForm(defaultOfficialForm);
+    resetOfficialAutoFillState();
     setIsOfficialDrawerOpen(true);
   }
 
@@ -894,6 +1167,7 @@ export function WishlistAppView({
       priority: item.priority,
       repurchaseState: isRecurringItem(item.repurchaseState) ? "precisa_recompra" : "nao_recompra",
     });
+    resetOfficialAutoFillState();
     setIsOfficialDrawerOpen(true);
   }
 
@@ -969,6 +1243,7 @@ export function WishlistAppView({
       setIsOfficialDrawerOpen(false);
       setOfficialForm(defaultOfficialForm);
       setEditingOfficialItemId(null);
+      resetOfficialAutoFillState();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Erro inesperado.");
     } finally {
@@ -1055,6 +1330,7 @@ export function WishlistAppView({
   function openCreatePersonalDrawer() {
     setEditingPersonalItemId(null);
     setPersonalForm(defaultPersonalForm);
+    resetPersonalAutoFillState();
     setIsPersonalDrawerOpen(true);
   }
 
@@ -1073,6 +1349,7 @@ export function WishlistAppView({
       repurchaseState: isRecurringItem(item.repurchaseState) ? "precisa_recompra" : "nao_recompra",
       visibility: item.visibility,
     });
+    resetPersonalAutoFillState();
     setIsPersonalDrawerOpen(true);
   }
 
@@ -1149,6 +1426,7 @@ export function WishlistAppView({
       setIsPersonalDrawerOpen(false);
       setEditingPersonalItemId(null);
       setPersonalForm(defaultPersonalForm);
+      resetPersonalAutoFillState();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Erro inesperado.");
     } finally {
@@ -1317,7 +1595,7 @@ export function WishlistAppView({
       <article
         key={item.id}
         onClick={(event) => handleOfficialCardClick(event, item)}
-        className={`overflow-visible rounded-[26px] border border-[#e8edf5] bg-white p-3 shadow-[0_14px_30px_rgba(30,39,57,0.1)] ${
+        className={`flex h-full flex-col overflow-visible rounded-[26px] border border-[#e8edf5] bg-white p-3 shadow-[0_14px_30px_rgba(30,39,57,0.1)] ${
           can("wishlist.official.edit") ? "cursor-pointer" : ""
         }`}
       >
@@ -1365,7 +1643,7 @@ export function WishlistAppView({
           ) : null}
         </div>
 
-        <div className="space-y-3 px-2 pb-2 pt-4">
+        <div className="flex flex-1 flex-col gap-3 px-2 pb-2 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="truncate text-[1rem] font-semibold leading-tight text-[#121723]">
@@ -1416,7 +1694,7 @@ export function WishlistAppView({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+          <div className="mt-auto grid grid-cols-[1fr_auto_auto] gap-2">
             <a
               href={item.purchaseUrl}
               target="_blank"
@@ -1475,7 +1753,7 @@ export function WishlistAppView({
       <article
         key={item.id}
         onClick={(event) => handlePersonalCardClick(event, item)}
-        className={`overflow-visible rounded-[26px] border border-[#e8edf5] bg-white p-3 shadow-[0_14px_30px_rgba(30,39,57,0.1)] ${
+        className={`flex h-full flex-col overflow-visible rounded-[26px] border border-[#e8edf5] bg-white p-3 shadow-[0_14px_30px_rgba(30,39,57,0.1)] ${
           can("wishlist.personal.edit") ? "cursor-pointer" : ""
         }`}
       >
@@ -1508,7 +1786,7 @@ export function WishlistAppView({
           </span>
         </div>
 
-        <div className="space-y-3 px-2 pb-2 pt-4">
+        <div className="flex flex-1 flex-col gap-3 px-2 pb-2 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="truncate text-[1rem] font-semibold leading-tight text-[#121723]">
@@ -1559,7 +1837,7 @@ export function WishlistAppView({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div className="mt-auto grid grid-cols-[1fr_auto] gap-2">
             <a
               href={item.purchaseUrl}
               target="_blank"
@@ -2651,6 +2929,7 @@ export function WishlistAppView({
           setIsOfficialDrawerOpen(false);
           setEditingOfficialItemId(null);
           setOfficialForm(defaultOfficialForm);
+          resetOfficialAutoFillState();
         }}
         title={editingOfficialItemId ? "Editar item oficial" : "Novo item oficial"}
         secondaryAction={{
@@ -2659,6 +2938,7 @@ export function WishlistAppView({
             setIsOfficialDrawerOpen(false);
             setEditingOfficialItemId(null);
             setOfficialForm(defaultOfficialForm);
+            resetOfficialAutoFillState();
           },
         }}
         primaryAction={{
@@ -2676,7 +2956,10 @@ export function WishlistAppView({
             <DrawerFieldRow label={propertyLabel(<Pencil aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
               <input
                 value={officialForm.name}
-                onChange={(event) => setOfficialForm((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) => {
+                  markOfficialAutoFillFieldTouched("name");
+                  setOfficialForm((current) => ({ ...current, name: event.target.value }));
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 required
               />
@@ -2684,28 +2967,39 @@ export function WishlistAppView({
             <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link")} divider={false}>
               <EditableLinkButtonField
                 value={officialForm.purchaseUrl}
-                onChange={(value) =>
-                  setOfficialForm((current) => ({ ...current, purchaseUrl: value }))
-                }
+                onChange={handleOfficialPurchaseUrlChange}
                 placeholder="https://..."
                 required
               />
+              {officialLinkPreview.isLoading || officialLinkPreview.error ? (
+                <p
+                  className={`mt-1.5 text-xs ${
+                    officialLinkPreview.error ? "text-[#9a6b22]" : "text-[#68738a]"
+                  }`}
+                >
+                  {officialLinkPreview.isLoading
+                    ? "Buscando nome, imagem e preco..."
+                    : officialLinkPreview.error}
+                </p>
+              ) : null}
             </DrawerFieldRow>
             <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem")} divider={false}>
               <EditableLinkButtonField
                 value={officialForm.imageUrl}
-                onChange={(value) =>
-                  setOfficialForm((current) => ({ ...current, imageUrl: value }))
-                }
+                onChange={(value) => {
+                  markOfficialAutoFillFieldTouched("imageUrl");
+                  setOfficialForm((current) => ({ ...current, imageUrl: value }));
+                }}
                 placeholder="https://..."
               />
             </DrawerFieldRow>
             <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={officialForm.price}
-                onChange={(event) =>
-                  setOfficialForm((current) => ({ ...current, price: event.target.value }))
-                }
+                onChange={(event) => {
+                  markOfficialAutoFillFieldTouched("price");
+                  setOfficialForm((current) => ({ ...current, price: event.target.value }));
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 placeholder="149,90"
                 required
@@ -2765,6 +3059,7 @@ export function WishlistAppView({
           setIsPersonalDrawerOpen(false);
           setEditingPersonalItemId(null);
           setPersonalForm(defaultPersonalForm);
+          resetPersonalAutoFillState();
         }}
         title={editingPersonalItemId ? "Editar item pessoal" : "Novo item pessoal"}
         secondaryAction={{
@@ -2773,6 +3068,7 @@ export function WishlistAppView({
             setIsPersonalDrawerOpen(false);
             setEditingPersonalItemId(null);
             setPersonalForm(defaultPersonalForm);
+            resetPersonalAutoFillState();
           },
         }}
         primaryAction={{
@@ -2790,7 +3086,10 @@ export function WishlistAppView({
             <DrawerFieldRow label={propertyLabel(<Pencil aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
               <input
                 value={personalForm.name}
-                onChange={(event) => setPersonalForm((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) => {
+                  markPersonalAutoFillFieldTouched("name");
+                  setPersonalForm((current) => ({ ...current, name: event.target.value }));
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 required
               />
@@ -2798,28 +3097,39 @@ export function WishlistAppView({
             <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link")} divider={false}>
               <EditableLinkButtonField
                 value={personalForm.purchaseUrl}
-                onChange={(value) =>
-                  setPersonalForm((current) => ({ ...current, purchaseUrl: value }))
-                }
+                onChange={handlePersonalPurchaseUrlChange}
                 placeholder="https://..."
                 required
               />
+              {personalLinkPreview.isLoading || personalLinkPreview.error ? (
+                <p
+                  className={`mt-1.5 text-xs ${
+                    personalLinkPreview.error ? "text-[#9a6b22]" : "text-[#68738a]"
+                  }`}
+                >
+                  {personalLinkPreview.isLoading
+                    ? "Buscando nome, imagem e preco..."
+                    : personalLinkPreview.error}
+                </p>
+              ) : null}
             </DrawerFieldRow>
             <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem")} divider={false}>
               <EditableLinkButtonField
                 value={personalForm.imageUrl}
-                onChange={(value) =>
-                  setPersonalForm((current) => ({ ...current, imageUrl: value }))
-                }
+                onChange={(value) => {
+                  markPersonalAutoFillFieldTouched("imageUrl");
+                  setPersonalForm((current) => ({ ...current, imageUrl: value }));
+                }}
                 placeholder="https://..."
               />
             </DrawerFieldRow>
             <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={personalForm.price}
-                onChange={(event) =>
-                  setPersonalForm((current) => ({ ...current, price: event.target.value }))
-                }
+                onChange={(event) => {
+                  markPersonalAutoFillFieldTouched("price");
+                  setPersonalForm((current) => ({ ...current, price: event.target.value }));
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9aa3b8]"
                 placeholder="149,90"
                 required

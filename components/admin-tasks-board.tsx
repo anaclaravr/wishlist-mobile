@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import {
+  AlertTriangle,
   ArrowDownUp,
   BookOpen,
   Briefcase,
@@ -23,6 +24,8 @@ import {
   Layers3,
   List,
   Loader2,
+  Flame,
+  Minus,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -63,7 +66,7 @@ function propertyLabel(icon: ReactNode, label: string) {
 
 type AdminTaskStatus = "pending" | "in_progress" | "done";
 type AdminTaskPriority = "low" | "medium" | "high" | null;
-type AdminTaskCategory = "trabalho" | "estudos" | "pessoal";
+type AdminTaskCategory = string;
 type PriorityFilter = "all" | "high" | "medium" | "low";
 type DueFilter = "all" | "overdue" | "today" | "upcoming" | "none";
 type SortMode = "updated_desc" | "due_asc" | "priority_desc";
@@ -143,24 +146,27 @@ const priorityOptions: ComboboxOption[] = [
   {
     value: "low",
     label: "Baixa",
-    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    icon: <Minus aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#6f7a95]" />,
     chipType: "tertiary",
+    chipSurface: "filled",
   },
   {
     value: "medium",
     label: "Media",
-    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    icon: <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#d2952c]" />,
     chipType: "warning",
+    chipSurface: "filled",
   },
   {
     value: "high",
     label: "Alta",
-    icon: <Flag aria-hidden="true" className="h-3.5 w-3.5" />,
+    icon: <Flame aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#d65840]" />,
     chipType: "destructive",
+    chipSurface: "filled",
   },
 ];
 
-const categoryOptions: ComboboxOption[] = [
+const defaultCategoryOptions: ComboboxOption[] = [
   {
     value: "trabalho",
     label: "Trabalho",
@@ -305,12 +311,6 @@ function summarizeTaskNotes(value: string | null) {
     .trim();
 }
 
-function statusLabel(status: AdminTaskStatus) {
-  if (status === "pending") return "Pendente";
-  if (status === "in_progress") return "Em andamento";
-  return "Concluida";
-}
-
 function priorityLabel(priority: AdminTaskPriority) {
   if (priority === "high") return "Alta";
   if (priority === "medium") return "Media";
@@ -321,7 +321,8 @@ function priorityLabel(priority: AdminTaskPriority) {
 function categoryLabel(category: AdminTaskCategory) {
   if (category === "trabalho") return "Trabalho";
   if (category === "estudos") return "Estudos";
-  return "Pessoal";
+  if (category === "pessoal") return "Pessoal";
+  return category;
 }
 
 function statusIcon(status: AdminTaskStatus, className = "h-4 w-4") {
@@ -348,28 +349,61 @@ function categoryIcon(category: AdminTaskCategory, className = "h-4 w-4") {
   if (category === "estudos") {
     return <BookOpen aria-hidden="true" className={className} />;
   }
-  return <UserRound aria-hidden="true" className={className} />;
+  if (category === "pessoal") {
+    return <UserRound aria-hidden="true" className={className} />;
+  }
+  return <Tag aria-hidden="true" className={className} />;
 }
 
-function statusChip(taskStatus: AdminTaskStatus) {
+function optionChipProps(options: ComboboxOption[], value: string) {
+  const option = options.find((item) => item.value === value);
+
+  return {
+    type: option?.chipType ?? "tertiary",
+    surface: option?.chipSurface ?? "neutral",
+    icon: option?.icon,
+  };
+}
+
+function priorityFilterIcon(priority: PriorityFilter) {
+  if (priority === "all") {
+    return <Layers3 aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />;
+  }
+
   return (
-    <Chip
-      label={statusLabel(taskStatus)}
-      type={taskStatus === "done" ? "success" : taskStatus === "in_progress" ? "secondary" : "warning"}
-      showIconLeft
-      iconLeft={statusIcon(taskStatus, "h-3.5 w-3.5")}
-    />
+    priorityOptions.find((option) => option.value === priority)?.icon ?? (
+      <Flag aria-hidden="true" className="h-4 w-4 shrink-0 text-[#6f7a95]" />
+    )
   );
+}
+
+function categoryOptionForValue(category: AdminTaskCategory): ComboboxOption {
+  const defaultOption = defaultCategoryOptions.find((option) => option.value === category);
+  if (defaultOption) {
+    return defaultOption;
+  }
+
+  return {
+    value: category,
+    label: categoryLabel(category),
+    icon: <Tag aria-hidden="true" className="h-3.5 w-3.5" />,
+    chipType: "secondary",
+    chipSurface: "neutral",
+  };
 }
 
 function priorityChip(priority: AdminTaskPriority) {
   if (!priority) return null;
+  const chip = optionChipProps(priorityOptions, priority);
+
   return (
     <Chip
       label={priorityLabel(priority)}
-      type={priority === "high" ? "destructive" : priority === "medium" ? "warning" : "tertiary"}
-      showIconLeft
-      iconLeft={priorityIcon(priority, "h-3.5 w-3.5")}
+      size="sm"
+      type={chip.type}
+      surface={chip.surface}
+      showIconLeft={Boolean(chip.icon)}
+      iconLeft={chip.icon}
     />
   );
 }
@@ -380,7 +414,9 @@ function dueChip(dueAt: string | null) {
   return (
     <Chip
       label={status === "today" ? "Vence hoje" : status === "overdue" ? "Atrasada" : formatDueDate(dueAt)}
+      size="sm"
       type={status === "overdue" ? "destructive" : status === "today" ? "warning" : "info"}
+      surface="neutral"
       showIconLeft
       iconLeft={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
     />
@@ -388,12 +424,17 @@ function dueChip(dueAt: string | null) {
 }
 
 function categoryChip(category: AdminTaskCategory) {
+  const option = categoryOptionForValue(category);
+  const chip = optionChipProps([option], category);
+
   return (
     <Chip
       label={categoryLabel(category)}
-      type={category === "trabalho" ? "info" : category === "estudos" ? "warning" : "secondary"}
-      showIconLeft
-      iconLeft={categoryIcon(category, "h-3.5 w-3.5")}
+      size="sm"
+      type={chip.type}
+      surface={chip.surface}
+      showIconLeft={Boolean(chip.icon)}
+      iconLeft={chip.icon}
     />
   );
 }
@@ -457,6 +498,30 @@ export function AdminTasksBoard({
   const filterPopoverRef = useRef<HTMLDivElement | null>(null);
   const sortPopoverRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const categoryOptions = useMemo<ComboboxOption[]>(() => {
+    const defaults = new Map(defaultCategoryOptions.map((option) => [option.value, option]));
+    const values = new Set([
+      ...defaultCategoryOptions.map((option) => option.value),
+      ...tasks.map((task) => task.category).filter(Boolean),
+      form.category,
+    ]);
+
+    return Array.from(values)
+      .filter(Boolean)
+      .sort((left, right) => {
+        const leftDefaultIndex = defaultCategoryOptions.findIndex((option) => option.value === left);
+        const rightDefaultIndex = defaultCategoryOptions.findIndex((option) => option.value === right);
+
+        if (leftDefaultIndex >= 0 || rightDefaultIndex >= 0) {
+          return (leftDefaultIndex >= 0 ? leftDefaultIndex : Number.MAX_SAFE_INTEGER) -
+            (rightDefaultIndex >= 0 ? rightDefaultIndex : Number.MAX_SAFE_INTEGER);
+        }
+
+        return categoryLabel(left).localeCompare(categoryLabel(right), "pt-BR");
+      })
+      .map((category) => defaults.get(category) ?? categoryOptionForValue(category));
+  }, [form.category, tasks]);
 
   const tagOptions = useMemo<ComboboxOption[]>(
     () =>
@@ -832,6 +897,7 @@ export function AdminTasksBoard({
       <Chip
         key={tag}
         label={tag}
+        size="sm"
         type="tertiary"
         surface="neutral"
         showIconLeft
@@ -937,14 +1003,13 @@ export function AdminTasksBoard({
         {notesSummary ? <p className="line-clamp-3 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
 
         <div className="flex flex-wrap gap-2">
-          {statusChip(task.status)}
           {priorityChip(task.priority)}
           {categoryChip(task.category)}
           {dueChip(task.dueAt)}
           {settings.showTags ? renderTags(task.tags.slice(0, 2)) : null}
         </div>
 
-        <div className="mt-auto flex items-center gap-2 pt-1">
+        <div className="mt-auto flex items-center gap-2 border-t border-[#edf1f7] pt-3">
           <CommonButton
             type="button"
             onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
@@ -1000,7 +1065,6 @@ export function AdminTasksBoard({
           {notesSummary ? <p className="line-clamp-2 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
 
           <div className="flex flex-wrap gap-2">
-            {statusChip(task.status)}
             {priorityChip(task.priority)}
             {categoryChip(task.category)}
             {dueChip(task.dueAt)}
@@ -1068,7 +1132,7 @@ export function AdminTasksBoard({
           selected: draftFilters.priority === "all",
           onSelect: () => setDraftFilters((current) => ({ ...current, priority: "all" })),
           count: priorityCounts.all,
-          icon: <Layers3 aria-hidden="true" className="h-4 w-4" />,
+          icon: priorityFilterIcon("all"),
         },
         {
           id: "high",
@@ -1076,7 +1140,7 @@ export function AdminTasksBoard({
           selected: draftFilters.priority === "high",
           onSelect: () => setDraftFilters((current) => ({ ...current, priority: "high" })),
           count: priorityCounts.high,
-          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+          icon: priorityFilterIcon("high"),
         },
         {
           id: "medium",
@@ -1084,7 +1148,7 @@ export function AdminTasksBoard({
           selected: draftFilters.priority === "medium",
           onSelect: () => setDraftFilters((current) => ({ ...current, priority: "medium" })),
           count: priorityCounts.medium,
-          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+          icon: priorityFilterIcon("medium"),
         },
         {
           id: "low",
@@ -1092,7 +1156,7 @@ export function AdminTasksBoard({
           selected: draftFilters.priority === "low",
           onSelect: () => setDraftFilters((current) => ({ ...current, priority: "low" })),
           count: priorityCounts.low,
-          icon: <Flag aria-hidden="true" className="h-4 w-4" />,
+          icon: priorityFilterIcon("low"),
         },
       ];
     }
@@ -1561,9 +1625,11 @@ export function AdminTasksBoard({
                 value={form.category}
                 onChange={(value) => {
                   if (!value) return;
-                  setForm((current) => ({ ...current, category: value as AdminTaskCategory }));
+                  setForm((current) => ({ ...current, category: value.trim() || current.category }));
                 }}
                 variant="embedded"
+                allowCustomValue
+                customValueLabel="Criar categoria"
               />
             </DrawerFieldRow>
 

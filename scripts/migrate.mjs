@@ -243,9 +243,6 @@ await sql`
     ) then
       alter table admin_tasks drop constraint admin_tasks_category_check;
     end if;
-    alter table admin_tasks
-    add constraint admin_tasks_category_check
-    check (category in ('trabalho', 'estudos', 'pessoal'));
   end
   $$;
 `;

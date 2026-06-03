@@ -57,6 +57,7 @@ export function Drawer({
   bodyClassName?: string;
 }) {
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const titleTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(false);
 
@@ -117,12 +118,29 @@ export function Drawer({
     };
   }, [children, open]);
 
+  useEffect(() => {
+    const textarea = titleTextareaRef.current;
+    if (!open || !onTitleChange || !textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [onTitleChange, open, title]);
+
   if (!open) {
     return null;
   }
 
   const showExpanded = fullScreen || expanded;
   const showFooter = Boolean(footer || primaryAction || secondaryAction);
+  const editableTitleRows = Math.min(
+    3,
+    Math.max(
+      1,
+      title.split("\n").reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / 28)), 0),
+    ),
+  );
 
   return (
     <div className={cx("fixed inset-0 z-50", !modal && "pointer-events-none")}>
@@ -180,10 +198,11 @@ export function Drawer({
           <div className="min-w-0 space-y-1 pt-1">
             {onTitleChange ? (
               <textarea
+                ref={titleTextareaRef}
                 value={title}
                 onChange={(event) => onTitleChange(event.target.value)}
-                rows={2}
-                className="w-full resize-none border-0 bg-transparent p-0 text-[1.6rem] font-semibold leading-[1.08] text-[#121723] outline-none placeholder:text-[#a1aabc] sm:text-[1.9rem]"
+                rows={editableTitleRows}
+                className="w-full resize-none overflow-hidden break-words border-0 bg-transparent p-0 text-[1.6rem] font-semibold leading-[1.08] text-[#121723] outline-none placeholder:text-[#a1aabc] sm:text-[1.9rem]"
                 placeholder="Titulo"
               />
             ) : (
@@ -207,7 +226,7 @@ export function Drawer({
             {headerMeta ? <div className="pt-1">{headerMeta}</div> : null}
           </div>
 
-          <div className="mt-3 h-px bg-[#e5ebf4]" />
+          <div className="mt-2 h-px bg-[#e5ebf4]" />
         </div>
 
         <div className="relative min-h-0 flex-1">

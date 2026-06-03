@@ -25,7 +25,7 @@ import {
   ShoppingCart,
   Trash2,
 } from "lucide-react";
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { WishlistSidebar } from "@/components/wishlist-sidebar";
 import { Chip } from "@/components/ui/chip";
@@ -65,6 +65,21 @@ type SuggestionsResponse = {
   error?: string;
 };
 
+type LinkPreviewResponse = {
+  name?: string;
+  imageUrl?: string;
+  price?: string;
+  error?: string;
+};
+
+type LinkPreviewState = {
+  isLoading: boolean;
+  error: string | null;
+};
+
+type AutoFillField = "name" | "imageUrl" | "price";
+type AutoFillTouchedFields = Record<AutoFillField, boolean>;
+
 type ListFilter = "ativos" | "arquivados" | "todos";
 
 const priorities: WishlistItemPriority[] = ["baixa", "media", "alta"];
@@ -80,6 +95,44 @@ const repurchaseLabels: Record<ItemRepurchaseState, string> = {
   precisa_recompra: "Precisa recompra",
   ainda_tem: "Ainda tem (sem urgencia)",
 };
+
+function createAutoFillTouchedFields(): AutoFillTouchedFields {
+  return {
+    name: false,
+    imageUrl: false,
+    price: false,
+  };
+}
+
+function parseHttpUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return "";
+    }
+
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function shouldApplyPreviewField(
+  field: AutoFillField,
+  currentValue: string,
+  touchedFields: AutoFillTouchedFields,
+  autoFilledValues: Partial<Record<AutoFillField, string>>,
+) {
+  return (
+    !touchedFields[field] &&
+    (!currentValue.trim() || currentValue === (autoFilledValues[field] ?? ""))
+  );
+}
 
 function getSourceLabel(purchaseUrl: string) {
   try {
@@ -135,6 +188,13 @@ export function AdminWishlistPanel({
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkPreview, setLinkPreview] = useState<LinkPreviewState>({
+    isLoading: false,
+    error: null,
+  });
+  const autoFillTouchedFieldsRef = useRef<AutoFillTouchedFields>(createAutoFillTouchedFields());
+  const autoFilledValuesRef = useRef<Partial<Record<AutoFillField, string>>>({});
+  const purchaseUrlEditedRef = useRef(false);
 
   const categories = useMemo(
     () =>
@@ -212,6 +272,10 @@ export function AdminWishlistPanel({
     setPriority("media");
     setRepurchaseState("nao_recompra");
     setEditingItemId(null);
+    autoFillTouchedFieldsRef.current = createAutoFillTouchedFields();
+    autoFilledValuesRef.current = {};
+    purchaseUrlEditedRef.current = false;
+    setLinkPreview({ isLoading: false, error: null });
   }
 
   function openCreateDrawer() {
@@ -246,11 +310,155 @@ export function AdminWishlistPanel({
     setCategory(item.category);
     setPriority(item.priority);
     setRepurchaseState(item.repurchaseState);
+    autoFillTouchedFieldsRef.current = createAutoFillTouchedFields();
+    autoFilledValuesRef.current = {};
+    purchaseUrlEditedRef.current = false;
+    setLinkPreview({ isLoading: false, error: null });
     setIsItemDrawerOpen(true);
     setMessage(null);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  function markAutoFillFieldTouched(field: AutoFillField) {
+    autoFillTouchedFieldsRef.current = {
+      ...autoFillTouchedFieldsRef.current,
+      [field]: true,
+    };
+  }
+
+  function handlePurchaseUrlChange(value: string) {
+    purchaseUrlEditedRef.current = true;
+    setPurchaseUrl(value);
+  }
+
+  function applyLinkPreview(result: LinkPreviewResponse) {
+    setName((currentName) => {
+      if (!result.name) {
+        return currentName;
+      }
+
+      if (
+        !shouldApplyPreviewField(
+          "name",
+          currentName,
+          autoFillTouchedFieldsRef.current,
+          autoFilledValuesRef.current,
+        )
+      ) {
+        return currentName;
+      }
+
+      autoFilledValuesRef.current = {
+        ...autoFilledValuesRef.current,
+        name: result.name,
+      };
+      return result.name;
+    });
+
+    setImageUrl((currentImageUrl) => {
+      if (!result.imageUrl) {
+        return currentImageUrl;
+      }
+
+      if (
+        !shouldApplyPreviewField(
+          "imageUrl",
+          currentImageUrl,
+          autoFillTouchedFieldsRef.current,
+          autoFilledValuesRef.current,
+        )
+      ) {
+        return currentImageUrl;
+      }
+
+      autoFilledValuesRef.current = {
+        ...autoFilledValuesRef.current,
+        imageUrl: result.imageUrl,
+      };
+      return result.imageUrl;
+    });
+
+    setPrice((currentPrice) => {
+      if (!result.price) {
+        return currentPrice;
+      }
+
+      if (
+        !shouldApplyPreviewField(
+          "price",
+          currentPrice,
+          autoFillTouchedFieldsRef.current,
+          autoFilledValuesRef.current,
+        )
+      ) {
+        return currentPrice;
+      }
+
+      autoFilledValuesRef.current = {
+        ...autoFilledValuesRef.current,
+        price: result.price,
+      };
+      return result.price;
+    });
+  }
+
+  useEffect(() => {
+    const value = purchaseUrl.trim();
+    const previewUrl = parseHttpUrl(value);
+
+    if (!isItemDrawerOpen || !purchaseUrlEditedRef.current || !previewUrl) {
+      setLinkPreview({ isLoading: false, error: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setLinkPreview({ isLoading: true, error: null });
+
+      try {
+        const response = await fetch("/api/link-preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: previewUrl }),
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as LinkPreviewResponse;
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Nao foi possivel analisar este link.");
+        }
+
+        applyLinkPreview(result);
+        setLinkPreview({
+          isLoading: false,
+          error:
+            result.name || result.imageUrl || result.price
+              ? null
+              : "Nao encontrei dados para preencher.",
+        });
+      } catch (previewError) {
+        if (previewError instanceof DOMException && previewError.name === "AbortError") {
+          return;
+        }
+
+        setLinkPreview({
+          isLoading: false,
+          error:
+            previewError instanceof Error
+              ? previewError.message
+              : "Nao foi possivel analisar este link.",
+        });
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isItemDrawerOpen, purchaseUrl]);
 
   function toggleItemCollapsed(itemId: string) {
     setCollapsedItemIds((currentItems) => {
@@ -778,7 +986,10 @@ export function AdminWishlistPanel({
             <DrawerFieldRow label={propertyLabel(<Edit3 aria-hidden="true" className="h-4 w-4" />, "Nome")} divider={false}>
               <input
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  markAutoFillFieldTouched("name");
+                  setName(event.target.value);
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba]"
                 maxLength={120}
                 required
@@ -788,16 +999,28 @@ export function AdminWishlistPanel({
             <DrawerFieldRow label={propertyLabel(<ExternalLink aria-hidden="true" className="h-4 w-4" />, "Link de compra")} divider={false}>
               <EditableLinkButtonField
                 value={purchaseUrl}
-                onChange={setPurchaseUrl}
+                onChange={handlePurchaseUrlChange}
                 placeholder="https://..."
                 required
               />
+              {linkPreview.isLoading || linkPreview.error ? (
+                <p
+                  className={`mt-1.5 text-xs ${
+                    linkPreview.error ? "text-[#9a6b22]" : "text-[#68738a]"
+                  }`}
+                >
+                  {linkPreview.isLoading ? "Buscando nome, imagem e preco..." : linkPreview.error}
+                </p>
+              ) : null}
             </DrawerFieldRow>
 
             <DrawerFieldRow label={propertyLabel(<ImageIcon aria-hidden="true" className="h-4 w-4" />, "Imagem do item")} divider={false}>
               <EditableLinkButtonField
                 value={imageUrl}
-                onChange={setImageUrl}
+                onChange={(value) => {
+                  markAutoFillFieldTouched("imageUrl");
+                  setImageUrl(value);
+                }}
                 placeholder="https://..."
               />
             </DrawerFieldRow>
@@ -805,7 +1028,10 @@ export function AdminWishlistPanel({
             <DrawerFieldRow label={propertyLabel(<ShoppingCart aria-hidden="true" className="h-4 w-4" />, "Preco")} divider={false}>
               <input
                 value={price}
-                onChange={(event) => setPrice(event.target.value)}
+                onChange={(event) => {
+                  markAutoFillFieldTouched("price");
+                  setPrice(event.target.value);
+                }}
                 className="h-10 w-full bg-transparent px-0 text-sm text-[#151b28] outline-none placeholder:text-[#9ca5ba]"
                 inputMode="decimal"
                 placeholder="149,90"
