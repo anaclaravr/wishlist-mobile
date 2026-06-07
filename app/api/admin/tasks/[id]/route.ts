@@ -8,7 +8,7 @@ import { getErrorResponse, PublicError } from "@/lib/errors";
 const taskStatusSchema = z.enum(["pending", "in_progress", "done"]);
 const updateTaskSchema = z.object({
   title: z.string().trim().min(1, "Informe o titulo da tarefa.").max(180),
-  notes: z.string().trim().max(5000).nullable().optional(),
+  notes: z.string().trim().max(50000).nullable().optional(),
   status: taskStatusSchema.optional(),
   priority: z.enum(["low", "medium", "high"]).nullable().optional(),
   category: z.string().trim().min(1).max(60).optional(),

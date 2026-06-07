@@ -219,6 +219,41 @@ await sql`
 `;
 
 await sql`
+  alter table admin_tasks
+  add column if not exists sort_order double precision
+`;
+
+await sql`
+  with ranked as (
+    select
+      id,
+      row_number() over (
+        partition by status
+        order by
+          case
+            when status in ('pending', 'in_progress') and due_at is not null and due_at < now() then 0
+            when status in ('pending', 'in_progress') and due_at is not null and due_at::date = now()::date then 1
+            when status in ('pending', 'in_progress') and due_at is not null then 2
+            else 3
+          end asc,
+          created_at desc
+      ) * 1000 as next_sort_order
+    from admin_tasks
+    where sort_order is null
+  )
+  update admin_tasks
+  set sort_order = ranked.next_sort_order
+  from ranked
+  where admin_tasks.id = ranked.id
+`;
+
+await sql`
+  alter table admin_tasks
+  alter column sort_order set default 0,
+  alter column sort_order set not null
+`;
+
+await sql`
   do $$
   begin
     if exists (
@@ -472,6 +507,11 @@ await sql`
 await sql`
   create index if not exists admin_tasks_status_idx
   on admin_tasks (status, created_at desc)
+`;
+
+await sql`
+  create index if not exists admin_tasks_status_sort_order_idx
+  on admin_tasks (status, sort_order asc, created_at desc)
 `;
 
 await sql`

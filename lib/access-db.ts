@@ -192,6 +192,7 @@ type AdminTaskRow = {
   category: string | null;
   tags: string[] | null;
   dueAt: Date | string | null;
+  sortOrder: number | null;
   createdByProfileId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -280,6 +281,7 @@ export type AdminTask = {
   category: AdminTaskCategory;
   tags: string[];
   dueAt: string | null;
+  sortOrder: number;
   createdByProfileId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -423,6 +425,7 @@ function toAdminTask(row: AdminTaskRow): AdminTask {
     category: normalizeAdminTaskCategory(row.category),
     tags: (row.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
     dueAt: toIso(row.dueAt),
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
     createdByProfileId: row.createdByProfileId,
     createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
     updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
@@ -1376,6 +1379,7 @@ export async function listAdminTasks(input?: {
       category,
       tags,
       due_at as "dueAt",
+      sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",
       created_at as "createdAt",
       updated_at as "updatedAt",
@@ -1389,12 +1393,7 @@ export async function listAdminTasks(input?: {
         when status = 'in_progress' then 1
         else 2
       end asc,
-      case
-        when status in ('pending', 'in_progress') and due_at is not null and due_at < now() then 0
-        when status in ('pending', 'in_progress') and due_at is not null and due_at::date = now()::date then 1
-        when status in ('pending', 'in_progress') and due_at is not null then 2
-        else 3
-      end asc,
+      sort_order asc,
       created_at desc
     limit ${pageSize}
     offset ${offset}
@@ -1423,6 +1422,7 @@ export async function createAdminTask(input: {
 }) {
   const sql = getSql();
   const normalizedTags = normalizeTaskTags(input.tags);
+  const status = input.status ?? "pending";
 
   const [row] = await sql<AdminTaskRow[]>`
     insert into admin_tasks (
@@ -1433,16 +1433,18 @@ export async function createAdminTask(input: {
       category,
       tags,
       due_at,
+      sort_order,
       created_by_profile_id
     )
     values (
       ${input.title.trim()},
       ${input.notes?.trim() || null},
-      ${input.status ?? "pending"},
+      ${status},
       ${input.priority ?? null},
       ${input.category?.trim() || "pessoal"},
       ${normalizedTags},
       ${input.dueAt ? new Date(input.dueAt) : null},
+      (select coalesce(max(sort_order), 0) + 1000 from admin_tasks where status = ${status}),
       ${input.createdByProfileId}
     )
     returning
@@ -1454,6 +1456,7 @@ export async function createAdminTask(input: {
       category,
       tags,
       due_at as "dueAt",
+      sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",
       created_at as "createdAt",
       updated_at as "updatedAt",
@@ -1497,6 +1500,7 @@ export async function updateAdminTask(input: {
       category,
       tags,
       due_at as "dueAt",
+      sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",
       created_at as "createdAt",
       updated_at as "updatedAt",
@@ -1518,6 +1522,10 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
       set
         status = ${nextStatus},
         completed_at = case when ${nextStatus} = 'done' then now() else null end,
+        sort_order = case
+          when status = ${nextStatus} then sort_order
+          else (select coalesce(max(sort_order), 0) + 1000 from admin_tasks where status = ${nextStatus})
+        end,
         updated_at = now()
       where id = ${id}
       returning
@@ -1529,6 +1537,7 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
         category,
         tags,
         due_at as "dueAt",
+        sort_order as "sortOrder",
         created_by_profile_id as "createdByProfileId",
         created_at as "createdAt",
         updated_at as "updatedAt",
@@ -1558,6 +1567,7 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
       category,
       tags,
       due_at as "dueAt",
+      sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",
       created_at as "createdAt",
       updated_at as "updatedAt",
@@ -1569,6 +1579,144 @@ export async function toggleAdminTaskStatus(id: string, nextStatus?: AdminTaskSt
   }
 
   return toAdminTask(fallback);
+}
+
+async function rebalanceAdminTaskOrder(status: AdminTaskStatus) {
+  const sql = getSql();
+  await sql`
+    with ordered as (
+      select
+        id,
+        row_number() over (order by sort_order asc, created_at desc) * 1000 as next_sort_order
+      from admin_tasks
+      where status = ${status}
+    )
+    update admin_tasks
+    set sort_order = ordered.next_sort_order
+    from ordered
+    where admin_tasks.id = ordered.id
+  `;
+}
+
+async function getAdminTaskById(id: string) {
+  const sql = getSql();
+  const [row] = await sql<AdminTaskRow[]>`
+    select
+      id,
+      title,
+      notes,
+      status,
+      priority,
+      category,
+      tags,
+      due_at as "dueAt",
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt",
+      completed_at as "completedAt"
+    from admin_tasks
+    where id = ${id}
+  `;
+
+  if (!row) {
+    throw new PublicError("Tarefa nao encontrada.", 404);
+  }
+
+  return toAdminTask(row);
+}
+
+export async function reorderAdminTask(input: {
+  taskId: string;
+  targetStatus: AdminTaskStatus;
+  beforeId?: string | null;
+  afterId?: string | null;
+}) {
+  const sql = getSql();
+  const task = await getAdminTaskById(input.taskId);
+  const neighborIds = [input.beforeId, input.afterId].filter((id): id is string => Boolean(id));
+  const neighbors = neighborIds.length
+    ? await sql<Array<{ id: string; status: string | null; sortOrder: number | null }>>`
+        select
+          id,
+          status,
+          sort_order as "sortOrder"
+        from admin_tasks
+        where id in ${sql(neighborIds)}
+      `
+    : [];
+
+  const before = input.beforeId ? neighbors.find((neighbor) => neighbor.id === input.beforeId) : null;
+  const after = input.afterId ? neighbors.find((neighbor) => neighbor.id === input.afterId) : null;
+  if (input.beforeId && !before) {
+    throw new PublicError("Tarefa anterior nao encontrada.", 404);
+  }
+  if (input.afterId && !after) {
+    throw new PublicError("Tarefa posterior nao encontrada.", 404);
+  }
+  if (
+    (before && normalizeAdminTaskStatus(before.status) !== input.targetStatus) ||
+    (after && normalizeAdminTaskStatus(after.status) !== input.targetStatus)
+  ) {
+    throw new PublicError("Destino de reordenacao invalido.");
+  }
+
+  let nextSortOrder = 1000;
+  if (before && after) {
+    nextSortOrder = ((before.sortOrder ?? 0) + (after.sortOrder ?? 0)) / 2;
+  } else if (before) {
+    nextSortOrder = (before.sortOrder ?? 0) + 1000;
+  } else if (after) {
+    nextSortOrder = (after.sortOrder ?? 0) - 1000;
+  } else {
+    const [{ maxSortOrder }] = await sql<Array<{ maxSortOrder: number | null }>>`
+      select max(sort_order) as "maxSortOrder"
+      from admin_tasks
+      where status = ${input.targetStatus}
+        and id <> ${input.taskId}
+    `;
+    nextSortOrder = (maxSortOrder ?? 0) + 1000;
+  }
+
+  const [row] = await sql<AdminTaskRow[]>`
+    update admin_tasks
+    set
+      status = ${input.targetStatus},
+      sort_order = ${nextSortOrder},
+      completed_at = case when ${input.targetStatus} = 'done' then coalesce(completed_at, now()) else null end,
+      updated_at = now()
+    where id = ${input.taskId}
+    returning
+      id,
+      title,
+      notes,
+      status,
+      priority,
+      category,
+      tags,
+      due_at as "dueAt",
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt",
+      completed_at as "completedAt"
+  `;
+
+  if (!row) {
+    throw new PublicError("Tarefa nao encontrada.", 404);
+  }
+
+  const gap = before && after ? Math.abs((after.sortOrder ?? 0) - (before.sortOrder ?? 0)) : 1000;
+  if (gap < 1) {
+    await rebalanceAdminTaskOrder(input.targetStatus);
+    return getAdminTaskById(input.taskId);
+  }
+
+  if (task.status !== input.targetStatus) {
+    await rebalanceAdminTaskOrder(task.status);
+  }
+
+  return toAdminTask(row);
 }
 
 export async function deleteAdminTask(id: string) {

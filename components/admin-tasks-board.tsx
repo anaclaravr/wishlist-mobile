@@ -2,6 +2,8 @@
 
 import {
   FormEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   useEffect,
@@ -69,10 +71,18 @@ type AdminTaskPriority = "low" | "medium" | "high" | null;
 type AdminTaskCategory = string;
 type PriorityFilter = "all" | "high" | "medium" | "low";
 type DueFilter = "all" | "overdue" | "today" | "upcoming" | "none";
-type SortMode = "updated_desc" | "due_asc" | "priority_desc";
+type SortMode = "manual" | "updated_desc" | "due_asc" | "priority_desc";
 type TaskTab = "all" | AdminTaskStatus;
 type ViewMode = "board" | "list";
 type FilterPanelKey = "priority" | "due";
+type DrawerMode = "task" | "subtask";
+type DragMode = "pointer" | "keyboard";
+
+type DropTarget = {
+  status: AdminTaskStatus;
+  beforeId: string | null;
+  afterId: string | null;
+};
 
 type AdminTask = {
   id: string;
@@ -83,7 +93,22 @@ type AdminTask = {
   category: AdminTaskCategory;
   tags: string[];
   dueAt: string | null;
+  sortOrder: number;
   createdByProfileId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+type TaskSubtask = {
+  id: string;
+  title: string;
+  notes: RichTextBlock[];
+  status: AdminTaskStatus;
+  priority: AdminTaskPriority;
+  category: AdminTaskCategory;
+  tags: string[];
+  dueAt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -102,6 +127,7 @@ type TasksResponse = {
 type TaskForm = {
   title: string;
   notes: RichTextBlock[];
+  subtasks: TaskSubtask[];
   status: AdminTaskStatus;
   priority: AdminTaskPriority;
   category: AdminTaskCategory;
@@ -115,6 +141,7 @@ type FilterState = {
 };
 
 const RICH_TEXT_NOTES_PREFIX = "__rich_text__:";
+const TASK_NOTES_VERSION = 2;
 
 const defaultFilterState: FilterState = {
   priority: "all",
@@ -224,9 +251,12 @@ function dueStatus(dueAt: string | null) {
 }
 
 function taskToForm(task: AdminTask): TaskForm {
+  const content = deserializeTaskContent(task.notes);
+
   return {
     title: task.title,
-    notes: deserializeTaskNotes(task.notes),
+    notes: content.blocks,
+    subtasks: content.subtasks,
     status: task.status,
     priority: task.priority,
     category: task.category,
@@ -243,6 +273,7 @@ function createDefaultTaskForm(): TaskForm {
   return {
     title: "",
     notes: [createEmptyNoteBlock()],
+    subtasks: [],
     status: "pending",
     priority: null,
     category: "pessoal",
@@ -251,64 +282,233 @@ function createDefaultTaskForm(): TaskForm {
   };
 }
 
-function deserializeTaskNotes(value: string | null): RichTextBlock[] {
+function createEmptySubtask(category: AdminTaskCategory): TaskSubtask {
+  const now = new Date().toISOString();
+  return {
+    id: `subtask-${crypto.randomUUID()}`,
+    title: "",
+    notes: [createEmptyNoteBlock()],
+    status: "pending",
+    priority: null,
+    category,
+    tags: [],
+    dueAt: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  };
+}
+
+function isRichTextBlockType(value: unknown): value is RichTextBlock["type"] {
+  return value === "paragraph" || value === "h1" || value === "h2" || value === "h3" || value === "bullet" || value === "checklist" || value === "divider";
+}
+
+function normalizeRichTextBlocks(value: unknown): RichTextBlock[] {
   const fallback = [createEmptyNoteBlock()];
+  if (!Array.isArray(value) || value.length === 0) {
+    return fallback;
+  }
+
+  const blocks = value
+    .map<RichTextBlock | null>((block) => {
+      if (!block || typeof block !== "object") {
+        return null;
+      }
+      const candidate = block as Partial<RichTextBlock>;
+      const normalizedBlock: RichTextBlock = {
+        id: typeof candidate.id === "string" && candidate.id ? candidate.id : `block-${crypto.randomUUID()}`,
+        type: isRichTextBlockType(candidate.type) ? candidate.type : "paragraph",
+        text: typeof candidate.text === "string" ? candidate.text : "",
+      };
+      if (normalizedBlock.type === "checklist") {
+        normalizedBlock.checked = Boolean(candidate.checked);
+      }
+      return normalizedBlock;
+    })
+    .filter((block): block is RichTextBlock => Boolean(block));
+
+  return blocks.length ? blocks : fallback;
+}
+
+function normalizeSubtasks(value: unknown): TaskSubtask[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((subtask) => {
+      if (!subtask || typeof subtask !== "object") {
+        return null;
+      }
+      const candidate = subtask as Partial<TaskSubtask>;
+      const title = typeof candidate.title === "string" ? candidate.title : "";
+      const status = normalizeTaskStatus(
+        typeof candidate.status === "string" ? candidate.status : (subtask as { completed?: unknown }).completed ? "done" : "pending",
+      );
+      const now = new Date().toISOString();
+      return {
+        id: typeof candidate.id === "string" && candidate.id ? candidate.id : `subtask-${crypto.randomUUID()}`,
+        title,
+        notes: normalizeRichTextBlocks(candidate.notes),
+        status,
+        priority: normalizeTaskPriority(candidate.priority),
+        category: normalizeTaskCategory(candidate.category),
+        tags: Array.isArray(candidate.tags) ? candidate.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
+        dueAt: typeof candidate.dueAt === "string" && candidate.dueAt ? candidate.dueAt : null,
+        createdAt: typeof candidate.createdAt === "string" && candidate.createdAt ? candidate.createdAt : now,
+        updatedAt: typeof candidate.updatedAt === "string" && candidate.updatedAt ? candidate.updatedAt : now,
+        completedAt:
+          typeof candidate.completedAt === "string" && candidate.completedAt
+            ? candidate.completedAt
+            : status === "done"
+              ? now
+              : null,
+      };
+    })
+    .filter((subtask): subtask is TaskSubtask => Boolean(subtask));
+}
+
+function deserializeTaskContent(value: string | null): { blocks: RichTextBlock[]; subtasks: TaskSubtask[] } {
+  const fallback = { blocks: [createEmptyNoteBlock()], subtasks: [] };
   if (!value?.trim()) {
     return fallback;
   }
 
   if (value.startsWith(RICH_TEXT_NOTES_PREFIX)) {
     try {
-      const parsed = JSON.parse(value.slice(RICH_TEXT_NOTES_PREFIX.length)) as RichTextBlock[];
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        return fallback;
+      const parsed = JSON.parse(value.slice(RICH_TEXT_NOTES_PREFIX.length)) as unknown;
+      if (Array.isArray(parsed)) {
+        return { blocks: normalizeRichTextBlocks(parsed), subtasks: [] };
       }
-      return parsed.map((block) => ({
-        id: typeof block.id === "string" && block.id ? block.id : `block-${crypto.randomUUID()}`,
-        type: block.type,
-        text: typeof block.text === "string" ? block.text : "",
-      }));
+      if (parsed && typeof parsed === "object") {
+        const content = parsed as { blocks?: unknown; subtasks?: unknown };
+        return {
+          blocks: normalizeRichTextBlocks(content.blocks),
+          subtasks: normalizeSubtasks(content.subtasks),
+        };
+      }
+      return fallback;
     } catch {
       return fallback;
     }
   }
 
-  return [
-    {
-      id: `block-${crypto.randomUUID()}`,
-      type: "paragraph",
-      text: value,
-    },
-  ];
+  return {
+    blocks: [
+      {
+        id: `block-${crypto.randomUUID()}`,
+        type: "paragraph",
+        text: value,
+      },
+    ],
+    subtasks: [],
+  };
 }
 
-function serializeTaskNotes(blocks: RichTextBlock[]) {
-  const sanitized = blocks
+function deserializeTaskSubtasks(value: string | null): TaskSubtask[] {
+  return deserializeTaskContent(value).subtasks;
+}
+
+function sanitizeTaskNotes(blocks: RichTextBlock[]) {
+  return blocks
     .map((block) => ({
       id: block.id || `block-${crypto.randomUUID()}`,
       type: block.type,
       text: block.text ?? "",
+      checked: block.type === "checklist" ? Boolean(block.checked) : undefined,
     }))
     .filter((block) => block.type === "divider" || block.text.trim().length > 0);
+}
 
-  if (sanitized.length === 0) {
+function sanitizeSubtasks(subtasks: TaskSubtask[]) {
+  return subtasks
+    .map((subtask) => ({
+      id: subtask.id || `subtask-${crypto.randomUUID()}`,
+      title: subtask.title.trim(),
+      notes: sanitizeTaskNotes(subtask.notes),
+      status: subtask.status,
+      priority: subtask.priority,
+      category: subtask.category.trim() || "pessoal",
+      tags: subtask.tags.map((tag) => tag.trim()).filter(Boolean),
+      dueAt: subtask.dueAt,
+      createdAt: subtask.createdAt,
+      updatedAt: subtask.updatedAt,
+      completedAt: subtask.status === "done" ? subtask.completedAt ?? subtask.updatedAt : null,
+    }))
+    .filter((subtask) => subtask.title.length > 0);
+}
+
+function serializeTaskContent(blocks: RichTextBlock[], subtasks: TaskSubtask[]) {
+  const sanitizedBlocks = sanitizeTaskNotes(blocks);
+  const sanitizedSubtasks = sanitizeSubtasks(subtasks);
+
+  if (sanitizedBlocks.length === 0 && sanitizedSubtasks.length === 0) {
     return null;
   }
 
-  return `${RICH_TEXT_NOTES_PREFIX}${JSON.stringify(sanitized)}`;
+  return `${RICH_TEXT_NOTES_PREFIX}${JSON.stringify({
+    version: TASK_NOTES_VERSION,
+    blocks: sanitizedBlocks,
+    subtasks: sanitizedSubtasks,
+  })}`;
 }
 
-function summarizeTaskNotes(value: string | null) {
-  if (!value?.trim()) {
-    return "";
-  }
+function getSubtaskProgress(subtasks: TaskSubtask[]) {
+  const validSubtasks = sanitizeSubtasks(subtasks);
+  const total = validSubtasks.length;
+  const completed = validSubtasks.filter((subtask) => subtask.status === "done").length;
+  const percentage = total ? Math.round((completed / total) * 100) : 0;
 
-  const blocks = deserializeTaskNotes(value);
-  return blocks
-    .filter((block) => block.type !== "divider" && block.text.trim())
-    .map((block) => block.type === "bullet" ? `• ${block.text.trim()}` : block.text.trim())
-    .join(" ")
-    .trim();
+  return { total, completed, percentage };
+}
+
+function normalizeTaskStatus(value: unknown): AdminTaskStatus {
+  if (value === "done" || value === "in_progress") {
+    return value;
+  }
+  return "pending";
+}
+
+function normalizeTaskPriority(value: unknown): AdminTaskPriority {
+  if (value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeTaskCategory(value: unknown): AdminTaskCategory {
+  return typeof value === "string" && value.trim() ? value.trim() : "pessoal";
+}
+
+function formToSubtask(formValue: TaskForm, existing?: TaskSubtask): TaskSubtask {
+  const now = new Date().toISOString();
+  const status = formValue.status;
+  return {
+    id: existing?.id ?? `subtask-${crypto.randomUUID()}`,
+    title: formValue.title.trim(),
+    notes: formValue.notes,
+    status,
+    priority: formValue.priority,
+    category: formValue.category,
+    tags: formValue.tags,
+    dueAt: toIsoFromDateInput(formValue.dueAt),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    completedAt: status === "done" ? existing?.completedAt ?? now : null,
+  };
+}
+
+function subtaskToForm(subtask: TaskSubtask): TaskForm {
+  return {
+    title: subtask.title,
+    notes: subtask.notes,
+    subtasks: [],
+    status: subtask.status,
+    priority: subtask.priority,
+    category: subtask.category,
+    dueAt: toDateInputValue(subtask.dueAt),
+    tags: subtask.tags,
+  };
 }
 
 function priorityLabel(priority: AdminTaskPriority) {
@@ -479,7 +679,7 @@ export function AdminTasksBoard({
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilterState);
   const [activeFilterPanel, setActiveFilterPanel] = useState<FilterPanelKey | null>(null);
   const [activeFilterPanelOffset, setActiveFilterPanelOffset] = useState<number | null>(null);
-  const [sortMode, setSortMode] = useState<SortMode>("updated_desc");
+  const [sortMode, setSortMode] = useState<SortMode>("manual");
   const [activeTab, setActiveTab] = useState<TaskTab>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("board");
   const [page, setPage] = useState(initialData.pagination.page);
@@ -490,20 +690,28 @@ export function AdminTasksBoard({
   const [error, setError] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>("task");
   const [form, setForm] = useState<TaskForm>(createDefaultTaskForm);
+  const [parentFormDraft, setParentFormDraft] = useState<TaskForm | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragMode, setDragMode] = useState<DragMode | null>(null);
+  const [pressedTaskId, setPressedTaskId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
   const [isSortPopoverOpen, setIsSortPopoverOpen] = useState(false);
   const openerRef = useRef<HTMLElement | null>(null);
   const filterPopoverRef = useRef<HTMLDivElement | null>(null);
   const sortPopoverRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const suppressTaskClickRef = useRef(false);
 
   const categoryOptions = useMemo<ComboboxOption[]>(() => {
     const defaults = new Map(defaultCategoryOptions.map((option) => [option.value, option]));
     const values = new Set([
       ...defaultCategoryOptions.map((option) => option.value),
       ...tasks.map((task) => task.category).filter(Boolean),
+      ...tasks.flatMap((task) => deserializeTaskSubtasks(task.notes).map((subtask) => subtask.category)),
       form.category,
     ]);
 
@@ -525,15 +733,22 @@ export function AdminTasksBoard({
 
   const tagOptions = useMemo<ComboboxOption[]>(
     () =>
-      Array.from(new Set(tasks.flatMap((task) => task.tags)))
+      Array.from(
+        new Set([
+          ...tasks.flatMap((task) => task.tags),
+          ...tasks.flatMap((task) => deserializeTaskSubtasks(task.notes).flatMap((subtask) => subtask.tags)),
+        ]),
+      )
+        .concat(form.tags)
         .sort((a, b) => a.localeCompare(b))
+        .filter((tag, index, values) => tag && values.indexOf(tag) === index)
         .map((tag) => ({
           value: tag,
           label: tag,
           icon: <Tag aria-hidden="true" className="h-3.5 w-3.5" />,
           chipType: "tertiary",
         })),
-    [tasks],
+    [form.tags, tasks],
   );
 
   const filteredAndSortedTasks = useMemo(() => {
@@ -546,6 +761,23 @@ export function AdminTasksBoard({
     };
 
     return [...filtered].sort((a, b) => {
+      if (sortMode === "manual") {
+        const statusWeight: Record<AdminTaskStatus, number> = {
+          pending: 0,
+          in_progress: 1,
+          done: 2,
+        };
+        const statusDelta = statusWeight[a.status] - statusWeight[b.status];
+        if (statusDelta !== 0) {
+          return statusDelta;
+        }
+        const sortDelta = a.sortOrder - b.sortOrder;
+        if (sortDelta !== 0) {
+          return sortDelta;
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+
       if (sortMode === "priority_desc") {
         return (priorityWeight[b.priority ?? "low"] ?? 0) - (priorityWeight[a.priority ?? "low"] ?? 0);
       }
@@ -608,6 +840,7 @@ export function AdminTasksBoard({
   const activeFilterCount =
     Number(appliedFilters.priority !== defaultFilterState.priority) +
     Number(appliedFilters.due !== defaultFilterState.due);
+  const canReorderTasks = sortMode === "manual" && !hasAppliedFilters && !query.trim();
 
   useEffect(() => {
     if (!isFilterPopoverOpen) {
@@ -709,7 +942,10 @@ export function AdminTasksBoard({
 
   function openCreate(initialStatus?: AdminTaskStatus) {
     captureOpener();
+    setDrawerMode("task");
     setEditingTaskId(null);
+    setEditingSubtaskId(null);
+    setParentFormDraft(null);
     setForm({ ...createDefaultTaskForm(), status: initialStatus ?? "pending" });
     setError(null);
     setIsDrawerOpen(true);
@@ -717,17 +953,63 @@ export function AdminTasksBoard({
 
   function openEdit(task: AdminTask) {
     captureOpener();
+    setDrawerMode("task");
     setEditingTaskId(task.id);
+    setEditingSubtaskId(null);
+    setParentFormDraft(null);
     setForm(taskToForm(task));
     setError(null);
     setIsDrawerOpen(true);
   }
 
+  function openEditSubtask(parentTask: AdminTask, subtask: TaskSubtask) {
+    captureOpener();
+    setDrawerMode("subtask");
+    setEditingTaskId(parentTask.id);
+    setEditingSubtaskId(subtask.id);
+    setParentFormDraft(taskToForm(parentTask));
+    setForm(subtaskToForm(subtask));
+    setError(null);
+    setIsDrawerOpen(true);
+  }
+
+  function openEditSubtaskFromForm(subtask: TaskSubtask) {
+    setParentFormDraft(form);
+    setDrawerMode("subtask");
+    setEditingSubtaskId(subtask.id);
+    setForm(subtaskToForm(subtask));
+    setError(null);
+  }
+
+  function returnToParentTask() {
+    if (parentFormDraft) {
+      setForm(parentFormDraft);
+    }
+    setDrawerMode("task");
+    setEditingSubtaskId(null);
+    setParentFormDraft(null);
+  }
+
   function closeDrawer() {
     setIsDrawerOpen(false);
     setEditingTaskId(null);
+    setEditingSubtaskId(null);
+    setDrawerMode("task");
     setForm(createDefaultTaskForm());
+    setParentFormDraft(null);
     openerRef.current?.focus();
+  }
+
+  function createTaskPayload(formValue: TaskForm) {
+    return {
+      title: formValue.title.trim(),
+      notes: serializeTaskContent(formValue.notes, formValue.subtasks),
+      status: formValue.status,
+      priority: formValue.priority,
+      category: formValue.category,
+      tags: formValue.tags,
+      dueAt: toIsoFromDateInput(formValue.dueAt),
+    };
   }
 
   async function saveTask(event: FormEvent<HTMLFormElement>) {
@@ -746,15 +1028,49 @@ export function AdminTasksBoard({
     setMessage(null);
 
     try {
-      const payload = {
-        title,
-        notes: serializeTaskNotes(form.notes),
-        status: form.status,
-        priority: form.priority,
-        category: form.category,
-        tags: form.tags,
-        dueAt: toIsoFromDateInput(form.dueAt),
-      };
+      if (drawerMode === "subtask") {
+        if (!editingSubtaskId || !parentFormDraft) {
+          throw new Error("Nao foi possivel localizar a tarefa principal.");
+        }
+
+        const existingSubtask = parentFormDraft.subtasks.find((subtask) => subtask.id === editingSubtaskId);
+        const nextSubtask = formToSubtask(form, existingSubtask);
+        const nextParentForm = {
+          ...parentFormDraft,
+          subtasks: parentFormDraft.subtasks.map((subtask) =>
+            subtask.id === editingSubtaskId ? nextSubtask : subtask,
+          ),
+        };
+
+        if (!editingTaskId) {
+          setParentFormDraft(null);
+          setEditingSubtaskId(null);
+          setDrawerMode("task");
+          setForm(nextParentForm);
+          return;
+        }
+
+        const response = await fetch(`/api/admin/tasks/${editingTaskId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(createTaskPayload(nextParentForm)),
+        });
+        const result = (await response.json()) as { task?: AdminTask; error?: string };
+        if (!response.ok || !result.task) {
+          throw new Error(result.error ?? "Nao foi possivel salvar a subtask.");
+        }
+
+        const nextForm = taskToForm(result.task);
+        setTasks((current) => current.map((item) => (item.id === result.task!.id ? result.task! : item)));
+        setParentFormDraft(null);
+        setEditingSubtaskId(null);
+        setDrawerMode("task");
+        setForm(nextForm);
+        setMessage("Subtask atualizada.");
+        return;
+      }
+
+      const payload = createTaskPayload(form);
       const response = await fetch(editingTaskId ? `/api/admin/tasks/${editingTaskId}` : "/api/admin/tasks", {
         method: editingTaskId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -838,12 +1154,301 @@ export function AdminTasksBoard({
     await loadTasks(1, "");
   }
 
-  async function onDropToColumn(status: AdminTaskStatus) {
-    if (!draggingTaskId) return;
-    const task = tasks.find((item) => item.id === draggingTaskId);
+  function addSubtask() {
+    const nextSubtask = createEmptySubtask(form.category);
+    const nextParentForm = { ...form, subtasks: [...form.subtasks, nextSubtask] };
+    setParentFormDraft(nextParentForm);
+    setDrawerMode("subtask");
+    setEditingSubtaskId(nextSubtask.id);
+    setForm(subtaskToForm(nextSubtask));
+  }
+
+  function removeSubtask(subtaskId: string) {
+    setForm((current) => ({
+      ...current,
+      subtasks: current.subtasks.filter((subtask) => subtask.id !== subtaskId),
+    }));
+  }
+
+  async function setSubtaskStatus(parentTask: AdminTask, subtask: TaskSubtask, status: AdminTaskStatus) {
+    if (subtask.status === status || pendingAction === `subtask-status:${subtask.id}`) {
+      return;
+    }
+
+    setPendingAction(`subtask-status:${subtask.id}`);
+    setError(null);
+    try {
+      const parentForm = taskToForm(parentTask);
+      const now = new Date().toISOString();
+      const nextParentForm = {
+        ...parentForm,
+        subtasks: parentForm.subtasks.map((item) =>
+          item.id === subtask.id
+            ? {
+                ...item,
+                status,
+                updatedAt: now,
+                completedAt: status === "done" ? item.completedAt ?? now : null,
+              }
+            : item,
+        ),
+      };
+      const response = await fetch(`/api/admin/tasks/${parentTask.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createTaskPayload(nextParentForm)),
+      });
+      const result = (await response.json()) as { task?: AdminTask; error?: string };
+      if (!response.ok || !result.task) {
+        throw new Error(result.error ?? "Nao foi possivel atualizar a subtask.");
+      }
+      setTasks((current) => current.map((item) => (item.id === parentTask.id ? result.task! : item)));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  function getColumnTasksForDrop(status: AdminTaskStatus) {
+    return groupedTasks[status].filter((task) => task.id !== draggingTaskId);
+  }
+
+  function dropTargetFromIndex(status: AdminTaskStatus, index: number): DropTarget {
+    const columnTasks = getColumnTasksForDrop(status);
+    const boundedIndex = Math.min(Math.max(index, 0), columnTasks.length);
+    return {
+      status,
+      beforeId: boundedIndex > 0 ? columnTasks[boundedIndex - 1]?.id ?? null : null,
+      afterId: boundedIndex < columnTasks.length ? columnTasks[boundedIndex]?.id ?? null : null,
+    };
+  }
+
+  function getCurrentDropTarget(task: AdminTask): DropTarget {
+    const columnTasks = groupedTasks[task.status];
+    const currentIndex = columnTasks.findIndex((item) => item.id === task.id);
+    return {
+      status: task.status,
+      beforeId: currentIndex > 0 ? columnTasks[currentIndex - 1]?.id ?? null : null,
+      afterId: currentIndex >= 0 && currentIndex < columnTasks.length - 1 ? columnTasks[currentIndex + 1]?.id ?? null : null,
+    };
+  }
+
+  function getAppendDropTarget(status: AdminTaskStatus): DropTarget {
+    const columnTasks = getColumnTasksForDrop(status);
+    const lastTask = columnTasks[columnTasks.length - 1];
+    return { status, beforeId: lastTask?.id ?? null, afterId: null };
+  }
+
+  function getTaskDropTarget(task: AdminTask, placement: "before" | "after"): DropTarget {
+    const columnTasks = getColumnTasksForDrop(task.status);
+    const taskIndex = columnTasks.findIndex((item) => item.id === task.id);
+    if (taskIndex < 0) {
+      return getAppendDropTarget(task.status);
+    }
+    return dropTargetFromIndex(task.status, placement === "before" ? taskIndex : taskIndex + 1);
+  }
+
+  function isSameDropTarget(left: DropTarget | null, right: DropTarget | null) {
+    return Boolean(
+      left &&
+        right &&
+        left.status === right.status &&
+        left.beforeId === right.beforeId &&
+        left.afterId === right.afterId,
+    );
+  }
+
+  function resetDragState() {
     setDraggingTaskId(null);
-    if (!task || task.status === status) return;
-    await setTaskStatus(task, status);
+    setDragMode(null);
+    setPressedTaskId(null);
+    setDropTarget(null);
+  }
+
+  async function commitTaskReorder(target: DropTarget | null = dropTarget) {
+    if (!draggingTaskId || !target || pendingAction === `reorder:${draggingTaskId}`) {
+      resetDragState();
+      return;
+    }
+
+    const task = tasks.find((item) => item.id === draggingTaskId);
+    if (!task || !canReorderTasks) {
+      resetDragState();
+      return;
+    }
+
+    if (isSameDropTarget(getCurrentDropTarget(task), target)) {
+      resetDragState();
+      return;
+    }
+
+    setPendingAction(`reorder:${task.id}`);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/tasks/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          targetStatus: target.status,
+          beforeId: target.beforeId,
+          afterId: target.afterId,
+        }),
+      });
+      const result = (await response.json()) as { task?: AdminTask; error?: string };
+      if (!response.ok || !result.task) {
+        throw new Error(result.error ?? "Nao foi possivel reordenar a tarefa.");
+      }
+      setTasks((current) => current.map((item) => (item.id === result.task!.id ? result.task! : item)));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+    } finally {
+      setPendingAction(null);
+      resetDragState();
+      suppressTaskClickRef.current = true;
+      window.setTimeout(() => {
+        suppressTaskClickRef.current = false;
+      }, 0);
+    }
+  }
+
+  function beginTaskDrag(task: AdminTask, mode: DragMode) {
+    if (!canReorderTasks) {
+      return;
+    }
+    setDraggingTaskId(task.id);
+    setDragMode(mode);
+    setDropTarget(getCurrentDropTarget(task));
+  }
+
+  function onTaskDragStart(event: ReactDragEvent<HTMLElement>, task: AdminTask) {
+    if (!canReorderTasks) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+    suppressTaskClickRef.current = true;
+    beginTaskDrag(task, "pointer");
+  }
+
+  function onTaskCardDragStart(event: ReactDragEvent<HTMLElement>, task: AdminTask) {
+    const target = event.target;
+    if (isInteractiveTaskTarget(target)) {
+      event.preventDefault();
+      return;
+    }
+    onTaskDragStart(event, task);
+  }
+
+  function onTaskDragEnd() {
+    if (dragMode === "pointer") {
+      resetDragState();
+      window.setTimeout(() => {
+        suppressTaskClickRef.current = false;
+      }, 0);
+    }
+  }
+
+  function onTaskDragOver(event: ReactDragEvent<HTMLElement>, task: AdminTask) {
+    if (!draggingTaskId || !canReorderTasks || draggingTaskId === task.id) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const placement = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    const nextTarget = getTaskDropTarget(task, placement);
+    if (!isSameDropTarget(dropTarget, nextTarget)) {
+      setDropTarget(nextTarget);
+    }
+  }
+
+  function onColumnDragOver(event: ReactDragEvent<HTMLElement>, status: AdminTaskStatus) {
+    if (!draggingTaskId || !canReorderTasks) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const nextTarget = getAppendDropTarget(status);
+    if (!isSameDropTarget(dropTarget, nextTarget)) {
+      setDropTarget(nextTarget);
+    }
+  }
+
+  function onTaskDrop(event: ReactDragEvent<HTMLElement>, target: DropTarget | null = dropTarget) {
+    if (!draggingTaskId || !canReorderTasks) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    void commitTaskReorder(target);
+  }
+
+  function moveKeyboardDrop(task: AdminTask, direction: "up" | "down" | "left" | "right") {
+    const currentTarget = dropTarget ?? getCurrentDropTarget(task);
+    const orderedStatuses: AdminTaskStatus[] =
+      activeTab === "all" ? ["pending", "in_progress", "done"] : [activeTab];
+    const statusIndex = orderedStatuses.indexOf(currentTarget.status);
+
+    if (direction === "left" || direction === "right") {
+      const nextStatus = orderedStatuses[statusIndex + (direction === "right" ? 1 : -1)];
+      if (!nextStatus) {
+        return;
+      }
+      setDropTarget(getAppendDropTarget(nextStatus));
+      return;
+    }
+
+    const columnTasks = getColumnTasksForDrop(currentTarget.status);
+    const currentIndex =
+      currentTarget.beforeId === null
+        ? 0
+        : columnTasks.findIndex((item) => item.id === currentTarget.beforeId) + 1;
+    const nextIndex = currentIndex + (direction === "down" ? 1 : -1);
+    setDropTarget(dropTargetFromIndex(currentTarget.status, nextIndex));
+  }
+
+  function onTaskCardKeyDown(event: ReactKeyboardEvent<HTMLElement>, task: AdminTask) {
+    if (isInteractiveTaskTarget(event.target)) {
+      return;
+    }
+
+    if (!canReorderTasks) {
+      return;
+    }
+
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (draggingTaskId === task.id && dragMode === "keyboard") {
+        void commitTaskReorder(dropTarget ?? getCurrentDropTarget(task));
+        return;
+      }
+      beginTaskDrag(task, "keyboard");
+      return;
+    }
+
+    if (draggingTaskId !== task.id || dragMode !== "keyboard") {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      resetDragState();
+      return;
+    }
+
+    if (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveKeyboardDrop(
+        task,
+        event.key === "ArrowUp" ? "up" : event.key === "ArrowDown" ? "down" : event.key === "ArrowLeft" ? "left" : "right",
+      );
+    }
   }
 
   function openFilterPopover() {
@@ -906,6 +1511,140 @@ export function AdminTasksBoard({
     ));
   }
 
+  function renderCreatedDate(value: string) {
+    return (
+      <div className="inline-flex items-center gap-2 text-sm text-[#6f7890]">
+        <CalendarClock aria-hidden="true" className="h-4 w-4" />
+        <span>{formatCreatedDate(value)}</span>
+      </div>
+    );
+  }
+
+  function renderTaskDates(task: AdminTask) {
+    return renderCreatedDate(task.createdAt);
+  }
+
+  function renderSubtaskCard(parentTask: AdminTask, subtask: TaskSubtask) {
+    const isStatusPending = pendingAction === `subtask-status:${subtask.id}`;
+
+    return (
+      <article
+        key={subtask.id}
+        draggable={false}
+        onDragStart={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          openEditSubtask(parentTask, subtask);
+        }}
+        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#dce4f1] bg-[#f8faff] p-3 transition hover:border-[#c6d2e5] hover:bg-white"
+      >
+        <div>
+          <h4
+            className={cx(
+              "line-clamp-2 text-[1rem] leading-6 text-[#161d2c]",
+              subtask.status === "done" && "text-[#7e8798] line-through",
+            )}
+          >
+            {subtask.title || "Sem titulo"}
+          </h4>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {priorityChip(subtask.priority)}
+          {dueChip(subtask.dueAt)}
+          {settings.showTags ? renderTags(subtask.tags.slice(0, 2)) : null}
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-[#e7edf6] pt-3" data-task-interactive>
+          <CommonButton
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void setSubtaskStatus(parentTask, subtask, subtask.status === "done" ? "pending" : "done");
+            }}
+            variant="secondary"
+            usage={subtask.status === "done" ? "general" : "info"}
+            showIconLeft
+            iconLeft={
+              isStatusPending ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : subtask.status === "done" ? (
+                <Circle aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              )
+            }
+            className="h-9 flex-1 justify-center text-sm"
+            title={subtask.status === "done" ? `Reabrir ${subtask.title}` : `Concluir ${subtask.title}`}
+          >
+            {subtask.status === "done" ? "Reabrir" : "Concluir"}
+          </CommonButton>
+        </div>
+      </article>
+    );
+  }
+
+  function renderSubtasks(parentTask: AdminTask, subtasks = deserializeTaskSubtasks(parentTask.notes)) {
+    const progress = getSubtaskProgress(subtasks);
+    if (!progress.total) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-3" aria-label={`Subtasks ${progress.completed} de ${progress.total}`}>
+        <div className="flex items-center justify-between gap-3 text-xs font-medium text-[#65708a]">
+          <span>
+            Subtasks {progress.completed}/{progress.total}
+          </span>
+          <span>{progress.percentage}% completas</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-[#e8edf5]">
+          <div
+            className="h-full rounded-full bg-[#4f6fad] transition-[width]"
+            style={{ width: `${progress.percentage}%` }}
+          />
+        </div>
+        <div className="space-y-2">
+          {subtasks.map((subtask) => renderSubtaskCard(parentTask, subtask))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSubtaskDraftCard(subtask: TaskSubtask) {
+    return (
+      <article
+        key={subtask.id}
+        onClick={() => openEditSubtaskFromForm(subtask)}
+        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#dce4f1] bg-[#f8faff] p-3 transition hover:border-[#c6d2e5] hover:bg-white"
+      >
+        <div>
+          <h4
+            className={cx(
+              "line-clamp-2 text-[1rem] leading-6 text-[#161d2c]",
+              subtask.status === "done" && "text-[#7e8798] line-through",
+            )}
+          >
+            {subtask.title || "Sem titulo"}
+          </h4>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {priorityChip(subtask.priority)}
+          {dueChip(subtask.dueAt)}
+          {settings.showTags ? renderTags(subtask.tags.slice(0, 2)) : null}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-[#e7edf6] pt-3">
+          <span className="text-xs font-medium text-[#65708a]">
+            {subtask.status === "done" ? "Concluida" : subtask.status === "in_progress" ? "Em andamento" : "Pendente"}
+          </span>
+          <Pencil aria-hidden="true" className="h-4 w-4 text-[#7c86a0]" />
+        </div>
+      </article>
+    );
+  }
+
   function renderTaskMenu(task: AdminTask) {
     return [
       {
@@ -955,36 +1694,93 @@ export function AdminTasksBoard({
     ];
   }
 
+  function renderDropZone(key: string) {
+    return (
+      <div
+        key={key}
+        className="min-h-[5.5rem] rounded-[22px] border border-dashed border-[#8cc7ff] bg-[#eaf8ff] shadow-[inset_0_0_0_1px_rgba(140,199,255,0.22)] transition-all duration-200"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  function shouldRenderDropBefore(task: AdminTask) {
+    return Boolean(draggingTaskId && dropTarget?.status === task.status && dropTarget.afterId === task.id);
+  }
+
+  function shouldRenderDropAfter(task: AdminTask) {
+    return Boolean(
+      draggingTaskId &&
+        dropTarget?.status === task.status &&
+        dropTarget.beforeId === task.id &&
+        dropTarget.afterId === null,
+    );
+  }
+
+  function renderTaskCollection(taskList: AdminTask[], variant: ViewMode) {
+    const renderer = variant === "board" ? renderTaskCard : renderTaskListItem;
+    return taskList.map((task) => (
+      <div key={task.id} className="space-y-3">
+        {shouldRenderDropBefore(task) ? renderDropZone(`drop-before-${task.id}`) : null}
+        {renderer(task)}
+        {shouldRenderDropAfter(task) ? renderDropZone(`drop-after-${task.id}`) : null}
+      </div>
+    ));
+  }
+
   function renderTaskCard(task: AdminTask) {
     const isStatusPending = pendingAction === `status:${task.id}`;
-    const notesSummary = summarizeTaskNotes(task.notes);
+    const subtasks = deserializeTaskSubtasks(task.notes);
+    const hasSubtasks = getSubtaskProgress(subtasks).total > 0;
+    const isGrabbed = draggingTaskId === task.id;
+    const isPressed = pressedTaskId === task.id;
+    const isReorderDisabled = !canReorderTasks;
 
     return (
       <article
         key={task.id}
-        draggable
-        onDragStart={() => setDraggingTaskId(task.id)}
-        onDragEnd={() => setDraggingTaskId(null)}
+        draggable={canReorderTasks}
+        data-task-card
+        tabIndex={canReorderTasks ? 0 : undefined}
+        aria-grabbed={isGrabbed}
+        title={canReorderTasks ? "Arraste o card para reordenar" : undefined}
+        onDragStart={(event) => onTaskCardDragStart(event, task)}
+        onDragEnd={onTaskDragEnd}
+        onDragOver={(event) => onTaskDragOver(event, task)}
+        onDrop={(event) => onTaskDrop(event)}
+        onKeyDown={(event) => onTaskCardKeyDown(event, task)}
+        onMouseDown={(event) => {
+          if (!isInteractiveTaskTarget(event.target)) {
+            setPressedTaskId(task.id);
+          }
+        }}
+        onMouseUp={() => setPressedTaskId(null)}
+        onMouseLeave={() => setPressedTaskId(null)}
         onClick={(event) => {
+          if (suppressTaskClickRef.current) {
+            suppressTaskClickRef.current = false;
+            return;
+          }
           if (isInteractiveTaskTarget(event.target)) {
             return;
           }
           openEdit(task);
         }}
         className={cx(
-          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition hover:border-[#c8d3e6]",
-          draggingTaskId === task.id && "border-[#93a6d3] opacity-75",
+          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#c8d3e6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2",
+          canReorderTasks && "cursor-grab active:cursor-grabbing",
+          isPressed && "border-[#cbd8f1] shadow-[0_10px_24px_rgba(49,89,199,0.12)]",
+          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#93a6d3] opacity-60 shadow-[0_16px_32px_rgba(35,48,72,0.16)]",
+          isGrabbed && dragMode === "keyboard" && "border-[#93a6d3] opacity-90 shadow-[0_18px_34px_rgba(35,48,72,0.18)]",
         )}
+        data-reorder-disabled={isReorderDisabled}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-2">
+          <div className="min-w-0 flex-1 space-y-2">
             <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
               {task.title || "Sem titulo"}
             </h3>
-            <div className="inline-flex items-center gap-2 text-sm text-[#6f7890]">
-              <CalendarClock aria-hidden="true" className="h-4 w-4" />
-              <span>{task.dueAt ? formatDueDate(task.dueAt) : formatCreatedDate(task.createdAt)}</span>
-            </div>
+            {renderTaskDates(task)}
           </div>
 
           <div className="-m-2 shrink-0 p-2" data-task-interactive>
@@ -1000,8 +1796,6 @@ export function AdminTasksBoard({
           </div>
         </div>
 
-        {notesSummary ? <p className="line-clamp-3 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
-
         <div className="flex flex-wrap gap-2">
           {priorityChip(task.priority)}
           {categoryChip(task.category)}
@@ -1009,60 +1803,89 @@ export function AdminTasksBoard({
           {settings.showTags ? renderTags(task.tags.slice(0, 2)) : null}
         </div>
 
-        <div className="mt-auto flex items-center gap-2 border-t border-[#edf1f7] pt-3">
-          <CommonButton
-            type="button"
-            onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
-            variant="secondary"
-            usage={task.status === "done" ? "general" : "info"}
-            showIconLeft
-            iconLeft={
-              isStatusPending ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : task.status === "done" ? (
-                <Circle aria-hidden="true" className="h-4 w-4" />
-              ) : (
-                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-              )
-            }
-            className="h-10 flex-1 justify-center"
-            title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
-            data-task-interactive
-          >
-            {task.status === "done" ? "Reabrir" : "Concluir"}
-          </CommonButton>
-        </div>
+        {renderSubtasks(task, subtasks)}
+
+        {!hasSubtasks ? (
+          <div className="mt-auto flex items-center gap-2 border-t border-[#edf1f7] pt-3">
+            <CommonButton
+              type="button"
+              onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
+              variant="secondary"
+              usage={task.status === "done" ? "general" : "info"}
+              showIconLeft
+              iconLeft={
+                isStatusPending ? (
+                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                ) : task.status === "done" ? (
+                  <Circle aria-hidden="true" className="h-4 w-4" />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                )
+              }
+              className="h-10 flex-1 justify-center"
+              title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
+              data-task-interactive
+            >
+              {task.status === "done" ? "Reabrir" : "Concluir"}
+            </CommonButton>
+          </div>
+        ) : null}
       </article>
     );
   }
 
   function renderTaskListItem(task: AdminTask) {
     const isStatusPending = pendingAction === `status:${task.id}`;
-    const notesSummary = summarizeTaskNotes(task.notes);
+    const subtasks = deserializeTaskSubtasks(task.notes);
+    const hasSubtasks = getSubtaskProgress(subtasks).total > 0;
+    const isGrabbed = draggingTaskId === task.id;
+    const isPressed = pressedTaskId === task.id;
 
     return (
       <article
         key={task.id}
+        draggable={canReorderTasks}
+        data-task-card
+        tabIndex={canReorderTasks ? 0 : undefined}
+        aria-grabbed={isGrabbed}
+        title={canReorderTasks ? "Arraste o card para reordenar" : undefined}
+        onDragStart={(event) => onTaskCardDragStart(event, task)}
+        onDragEnd={onTaskDragEnd}
+        onDragOver={(event) => onTaskDragOver(event, task)}
+        onDrop={(event) => onTaskDrop(event)}
+        onKeyDown={(event) => onTaskCardKeyDown(event, task)}
+        onMouseDown={(event) => {
+          if (!isInteractiveTaskTarget(event.target)) {
+            setPressedTaskId(task.id);
+          }
+        }}
+        onMouseUp={() => setPressedTaskId(null)}
+        onMouseLeave={() => setPressedTaskId(null)}
         onClick={(event) => {
+          if (suppressTaskClickRef.current) {
+            suppressTaskClickRef.current = false;
+            return;
+          }
           if (isInteractiveTaskTarget(event.target)) {
             return;
           }
           openEdit(task);
         }}
-        className="group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition hover:border-[#c8d3e6] sm:flex-row sm:items-start sm:justify-between"
+        className={cx(
+          "group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#c8d3e6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2 sm:flex-row sm:items-start sm:justify-between",
+          canReorderTasks && "cursor-grab active:cursor-grabbing",
+          isPressed && "border-[#cbd8f1] shadow-[0_10px_24px_rgba(49,89,199,0.12)]",
+          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#93a6d3] opacity-60 shadow-[0_16px_32px_rgba(35,48,72,0.16)]",
+          isGrabbed && dragMode === "keyboard" && "border-[#93a6d3] opacity-90 shadow-[0_18px_34px_rgba(35,48,72,0.18)]",
+        )}
       >
         <div className="min-w-0 flex-1 space-y-3">
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
               {task.title || "Sem titulo"}
             </h3>
-            <div className="inline-flex items-center gap-2 text-sm text-[#6f7890]">
-              <CalendarClock aria-hidden="true" className="h-4 w-4" />
-              <span>{task.dueAt ? formatDueDate(task.dueAt) : formatCreatedDate(task.createdAt)}</span>
-            </div>
+            {renderTaskDates(task)}
           </div>
-
-          {notesSummary ? <p className="line-clamp-2 text-sm leading-6 text-[#69718a]">{notesSummary}</p> : null}
 
           <div className="flex flex-wrap gap-2">
             {priorityChip(task.priority)}
@@ -1070,29 +1893,33 @@ export function AdminTasksBoard({
             {dueChip(task.dueAt)}
             {settings.showTags ? renderTags(task.tags) : null}
           </div>
+
+          {renderSubtasks(task, subtasks)}
         </div>
 
         <div className="flex shrink-0 items-center gap-2" data-task-interactive>
-          <CommonButton
-            type="button"
-            onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
-            variant="secondary"
-            usage={task.status === "done" ? "general" : "info"}
-            showIconLeft
-            iconLeft={
-              isStatusPending ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : task.status === "done" ? (
-                <Circle aria-hidden="true" className="h-4 w-4" />
-              ) : (
-                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-              )
-            }
-            className="h-10 whitespace-nowrap px-4"
-            title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
-          >
-            {task.status === "done" ? "Reabrir" : "Concluir"}
-          </CommonButton>
+          {!hasSubtasks ? (
+            <CommonButton
+              type="button"
+              onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
+              variant="secondary"
+              usage={task.status === "done" ? "general" : "info"}
+              showIconLeft
+              iconLeft={
+                isStatusPending ? (
+                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                ) : task.status === "done" ? (
+                  <Circle aria-hidden="true" className="h-4 w-4" />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                )
+              }
+              className="h-10 whitespace-nowrap px-4"
+              title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
+            >
+              {task.status === "done" ? "Reabrir" : "Concluir"}
+            </CommonButton>
+          ) : null}
 
           <MenuIconButton
             ariaLabel={`Abrir acoes de ${task.title || "tarefa"}`}
@@ -1230,6 +2057,12 @@ export function AdminTasksBoard({
 
   const sortListItems = [
     {
+      id: "manual",
+      label: "Ordem manual",
+      selected: sortMode === "manual",
+      onSelect: () => selectSortMode("manual"),
+    },
+    {
       id: "updated_desc",
       label: "Atualizadas recentemente",
       selected: sortMode === "updated_desc",
@@ -1268,6 +2101,7 @@ export function AdminTasksBoard({
             tasks: groupedTasks[activeTab],
           },
         ];
+  const formSubtaskProgress = getSubtaskProgress(form.subtasks);
 
   return (
     <section className="space-y-3">
@@ -1430,8 +2264,8 @@ export function AdminTasksBoard({
                   }
                   openSortPopover();
                 }}
-                variant={sortMode !== "updated_desc" ? "info" : "secondary"}
-                selected={sortMode !== "updated_desc"}
+                variant={sortMode !== "manual" ? "info" : "secondary"}
+                selected={sortMode !== "manual"}
                 aria-label="Abrir ordenacao"
                 title="Abrir ordenacao"
               >
@@ -1526,8 +2360,8 @@ export function AdminTasksBoard({
           {boardColumns.map((column) => (
             <section
               key={column.status}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => void onDropToColumn(column.status)}
+              onDragOver={(event) => onColumnDragOver(event, column.status)}
+              onDrop={(event) => onTaskDrop(event, dropTarget ?? getAppendDropTarget(column.status))}
               className="rounded-[28px] border border-[#dde3ef] bg-[#f5f7fb] p-3"
             >
               <header className="mb-3 flex items-center gap-2 px-1">
@@ -1547,19 +2381,22 @@ export function AdminTasksBoard({
               </header>
 
               <div className="space-y-3">
+                {dropTarget?.status === column.status && dropTarget.beforeId === null && dropTarget.afterId === null
+                  ? renderDropZone(`drop-empty-${column.status}`)
+                  : null}
                 {column.tasks.length === 0 ? (
                   <div className="rounded-[20px] bg-white px-4 py-4 text-sm text-[#7b849a]">
                     Nenhuma tarefa nesta etapa.
                   </div>
                 ) : (
-                  column.tasks.map((task) => renderTaskCard(task))
+                  renderTaskCollection(column.tasks, "board")
                 )}
               </div>
             </section>
           ))}
         </div>
       ) : (
-        <div className="space-y-3">{visibleTasks.map((task) => renderTaskListItem(task))}</div>
+        <div className="space-y-3">{renderTaskCollection(visibleTasks, "list")}</div>
       )}
 
       {page < totalPages ? (
@@ -1584,9 +2421,13 @@ export function AdminTasksBoard({
         onClose={closeDrawer}
         title={form.title}
         onTitleChange={(value) => setForm((current) => ({ ...current, title: value }))}
-        secondaryAction={{ label: "Cancelar", onClick: closeDrawer }}
+        secondaryAction={
+          drawerMode === "subtask"
+            ? { label: "Voltar para task", onClick: returnToParentTask }
+            : { label: "Cancelar", onClick: closeDrawer }
+        }
         primaryAction={{
-          label: pendingAction === "save" ? "Salvando..." : "Salvar",
+          label: pendingAction === "save" ? "Salvando..." : drawerMode === "subtask" ? "Salvar subtask" : "Salvar",
           onClick: () => {
             if (pendingAction === "save") {
               return;
@@ -1662,6 +2503,66 @@ export function AdminTasksBoard({
               </DrawerFieldRow>
             ) : null}
           </DrawerSection>
+
+          {drawerMode === "task" ? (
+            <div className="border-t border-[#edf1f7] pt-6">
+              <DrawerSection title="Subtasks">
+                <div className="space-y-4">
+                  {formSubtaskProgress.total ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 text-sm font-medium text-[#59657d]">
+                        <span>
+                          {formSubtaskProgress.completed} de {formSubtaskProgress.total} concluidas
+                        </span>
+                        <span>{formSubtaskProgress.percentage}%</span>
+                      </div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-[#e8edf5]">
+                        <div
+                          className="h-full rounded-full bg-[#4f6fad] transition-[width]"
+                          style={{ width: `${formSubtaskProgress.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {form.subtasks.length ? (
+                    <div className="space-y-2">
+                      {form.subtasks.map((subtask) => (
+                        <div key={subtask.id} className="relative">
+                          {renderSubtaskDraftCard(subtask)}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeSubtask(subtask.id);
+                            }}
+                            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#7f899f] transition hover:bg-[#f1f4fa] hover:text-[#a43a4a]"
+                            aria-label="Remover subtask"
+                            title="Remover subtask"
+                          >
+                            <Trash2 aria-hidden="true" className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <CommonButton
+                    type="button"
+                    onClick={addSubtask}
+                    variant="secondary"
+                    usage="general"
+                    showIconLeft
+                    iconLeft={<Plus aria-hidden="true" className="h-4 w-4" />}
+                    className="h-10 px-3"
+                    title="Adicionar subtask"
+                  >
+                    Adicionar subtask
+                  </CommonButton>
+                </div>
+              </DrawerSection>
+            </div>
+          ) : null}
 
           <div className="border-t border-[#edf1f7] pt-6">
             <DrawerSection title="Descricao">
