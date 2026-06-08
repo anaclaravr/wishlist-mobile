@@ -6,7 +6,9 @@ import { makeToken } from "@/lib/tokens";
 
 type Sql = ReturnType<typeof postgres>;
 
-let client: Sql | null = null;
+const globalForSql = globalThis as typeof globalThis & {
+  __wishlistSqlClient?: Sql;
+};
 
 export const WISHLIST_ITEM_PRIORITIES = ["baixa", "media", "alta"] as const;
 export const PERSONAL_ITEM_VISIBILITIES = ["private", "public"] as const;
@@ -148,20 +150,22 @@ function getSql() {
     throw new PublicError("Configure DATABASE_URL para acessar o banco de dados.", 500);
   }
 
-  if (!client) {
+  if (!globalForSql.__wishlistSqlClient) {
     const isLocal =
       databaseUrl.includes("localhost") ||
       databaseUrl.includes("127.0.0.1") ||
       databaseUrl.includes("sslmode=disable");
 
-    client = postgres(databaseUrl, {
-      max: 5,
+    globalForSql.__wishlistSqlClient = postgres(databaseUrl, {
+      max: process.env.NODE_ENV === "production" ? 5 : 1,
       ssl: isLocal ? undefined : "require",
       prepare: false,
+      idle_timeout: 20,
+      max_lifetime: 60 * 10,
     });
   }
 
-  return client;
+  return globalForSql.__wishlistSqlClient;
 }
 
 function toIso(value: Date | string | null) {

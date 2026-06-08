@@ -8,6 +8,8 @@ import { getErrorResponse, PublicError } from "@/lib/errors";
 const courseSchema = z.object({
   title: z.string().trim().min(1, "Informe o titulo do curso.").max(160),
   description: z.string().trim().max(800).optional(),
+  category: z.string().trim().max(80).optional(),
+  coverImageUrl: z.string().trim().max(1000).optional(),
   priority: z.enum(["low", "medium", "high"]).nullable().optional(),
 });
 
@@ -34,6 +36,8 @@ export async function POST(request: Request) {
       wishlistId: session.wishlistId,
       title: parsed.data.title,
       description: parsed.data.description ?? "",
+      category: parsed.data.category ?? "course",
+      coverImageUrl: parsed.data.coverImageUrl ?? "",
       priority: parsed.data.priority ?? null,
       createdByProfileId: session.profileId,
     });

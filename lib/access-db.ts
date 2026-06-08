@@ -30,7 +30,9 @@ import {
 
 type Sql = ReturnType<typeof postgres>;
 
-let client: Sql | null = null;
+const globalForSql = globalThis as typeof globalThis & {
+  __wishlistAccessSqlClient?: Sql;
+};
 
 function getSql() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -39,20 +41,22 @@ function getSql() {
     throw new PublicError("Configure DATABASE_URL para acessar o banco de dados.", 500);
   }
 
-  if (!client) {
+  if (!globalForSql.__wishlistAccessSqlClient) {
     const isLocal =
       databaseUrl.includes("localhost") ||
       databaseUrl.includes("127.0.0.1") ||
       databaseUrl.includes("sslmode=disable");
 
-    client = postgres(databaseUrl, {
-      max: 5,
+    globalForSql.__wishlistAccessSqlClient = postgres(databaseUrl, {
+      max: process.env.NODE_ENV === "production" ? 5 : 1,
       ssl: isLocal ? undefined : "require",
       prepare: false,
+      idle_timeout: 20,
+      max_lifetime: 60 * 10,
     });
   }
 
-  return client;
+  return globalForSql.__wishlistAccessSqlClient;
 }
 
 function toIso(value: Date | string | null) {
@@ -193,6 +197,7 @@ export type StudyNoteBlock = {
   text?: string;
   checked?: boolean;
   url?: string;
+  [key: string]: unknown;
 };
 
 type AdminTaskRow = {
@@ -226,6 +231,8 @@ type StudyCourseRow = {
   wishlistId: string;
   title: string;
   description: string;
+  category: string | null;
+  coverImageUrl: string | null;
   priority: string | null;
   sortOrder: number | null;
   createdByProfileId: string | null;
@@ -423,6 +430,8 @@ export type StudyCourse = {
   wishlistId: string;
   title: string;
   description: string;
+  category: string;
+  coverImageUrl: string;
   priority: StudyPriority;
   sortOrder: number;
   createdByProfileId: string | null;
@@ -635,12 +644,21 @@ function normalizeStudyMaterialType(value: string | null): StudyMaterialType {
   return "link";
 }
 
+function safeJsonParse(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeStudyNotes(value: unknown): StudyNoteBlock[] {
-  if (!Array.isArray(value)) {
+  const parsedValue = typeof value === "string" ? safeJsonParse(value) : value;
+  if (!Array.isArray(parsedValue)) {
     return [];
   }
 
-  return value
+  return parsedValue
     .map((block): StudyNoteBlock | null => {
       if (!block || typeof block !== "object") {
         return null;
@@ -648,6 +666,7 @@ function normalizeStudyNotes(value: unknown): StudyNoteBlock[] {
 
       const record = block as Record<string, unknown>;
       return {
+        ...record,
         id: typeof record.id === "string" ? record.id : undefined,
         type: typeof record.type === "string" ? record.type : "paragraph",
         text: typeof record.text === "string" ? record.text : "",
@@ -720,6 +739,8 @@ function toStudyCourse(row: StudyCourseRow, modules: StudyModule[] = []): StudyC
     wishlistId: row.wishlistId,
     title: row.title,
     description: row.description,
+    category: row.category || "course",
+    coverImageUrl: row.coverImageUrl || "",
     priority: normalizeStudyPriority(row.priority),
     sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
     createdByProfileId: row.createdByProfileId,
@@ -2058,6 +2079,8 @@ export async function listStudyData(input: { wishlistId: string }): Promise<Stud
         wishlist_id as "wishlistId",
         title,
         description,
+        category,
+        cover_image_url as "coverImageUrl",
         priority,
         sort_order as "sortOrder",
         created_by_profile_id as "createdByProfileId",
@@ -2191,6 +2214,8 @@ export async function createStudyCourse(input: {
   wishlistId: string;
   title: string;
   description?: string;
+  category?: string;
+  coverImageUrl?: string;
   priority?: StudyPriority;
   createdByProfileId: string;
 }) {
@@ -2200,6 +2225,8 @@ export async function createStudyCourse(input: {
       wishlist_id,
       title,
       description,
+      category,
+      cover_image_url,
       priority,
       sort_order,
       created_by_profile_id
@@ -2208,6 +2235,8 @@ export async function createStudyCourse(input: {
       ${input.wishlistId},
       ${input.title.trim()},
       ${input.description?.trim() ?? ""},
+      ${input.category?.trim() || "course"},
+      ${input.coverImageUrl?.trim() ?? ""},
       ${input.priority ?? null},
       (select coalesce(max(sort_order), 0) + 1000 from study_courses where wishlist_id = ${input.wishlistId}),
       ${input.createdByProfileId}
@@ -2217,6 +2246,8 @@ export async function createStudyCourse(input: {
       wishlist_id as "wishlistId",
       title,
       description,
+      category,
+      cover_image_url as "coverImageUrl",
       priority,
       sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",
@@ -2232,6 +2263,8 @@ export async function updateStudyCourse(input: {
   wishlistId: string;
   title: string;
   description?: string;
+  category?: string;
+  coverImageUrl?: string;
   priority?: StudyPriority;
 }) {
   const sql = getSql();
@@ -2240,6 +2273,8 @@ export async function updateStudyCourse(input: {
     set
       title = ${input.title.trim()},
       description = ${input.description?.trim() ?? ""},
+      category = ${input.category?.trim() || "course"},
+      cover_image_url = ${input.coverImageUrl?.trim() ?? ""},
       priority = ${input.priority ?? null},
       updated_at = now()
     where id = ${input.id}
@@ -2249,6 +2284,8 @@ export async function updateStudyCourse(input: {
       wishlist_id as "wishlistId",
       title,
       description,
+      category,
+      cover_image_url as "coverImageUrl",
       priority,
       sort_order as "sortOrder",
       created_by_profile_id as "createdByProfileId",

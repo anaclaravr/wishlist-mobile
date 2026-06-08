@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BookOpen, Home, Settings2, Users, LayoutPanelTop, Gift, CheckSquare, Briefcase } from "lucide-react";
 
 import type { Wishlist } from "@/lib/db";
@@ -18,6 +18,8 @@ type AdminActivePage =
   | "admin-pages-portfolio"
   | "admin-general";
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "wishlist:admin-sidebar-collapsed";
+
 export function AdminLayout({
   wishlist,
   wishlistHref,
@@ -32,12 +34,30 @@ export function AdminLayout({
   wishlistHref: string;
   activePage: AdminActivePage;
   breadcrumbItems?: BreadcrumbItem[];
-  title: string;
+  title: ReactNode;
   description?: string;
   compactHeader?: boolean;
   children: ReactNode;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsSidebarCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true");
+    } catch {
+      setIsSidebarCollapsed(false);
+    }
+  }, []);
+
+  function persistSidebarCollapsed(collapsed: boolean) {
+    setIsSidebarCollapsed(collapsed);
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+    } catch {
+      // Ignore storage failures; the in-memory state still updates for the current page.
+    }
+  }
+
   const ownerName = wishlist.ownerName || "Perfil da wishlist";
   const ownerEmail = wishlist.ownerEmail || "Sem e-mail configurado";
   async function handleLogout() {
@@ -117,15 +137,15 @@ export function AdminLayout({
           onLogout={handleLogout}
           activePage={activePage}
           isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
+          setIsCollapsed={persistSidebarCollapsed}
         />
 
         <section className="ds-app-panel p-4 sm:p-6">
           <header className={compactHeader ? "mb-2" : "mb-4"}>
             <Breadcrumb items={resolvedBreadcrumbItems} className="mb-1" />
-            <h2 className={`mt-1 font-semibold text-[#141a27] ${compactHeader ? "text-[24px]" : "text-[30px]"}`}>
+            <div className={`mt-1 font-semibold text-[#141a27] ${compactHeader ? "text-[24px]" : "text-[30px]"}`}>
               {title}
-            </h2>
+            </div>
             {description ? <p className="mt-2 text-sm text-[#6c7489]">{description}</p> : null}
           </header>
           {children}

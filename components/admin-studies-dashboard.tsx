@@ -1,10 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import {
   ArrowDownUp,
   BookOpen,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ExternalLink,
   FileText,
   Filter,
@@ -14,11 +20,13 @@ import {
   Link as LinkIcon,
   Loader2,
   MoreHorizontal,
+  Pencil,
   Plus,
-  PlayCircle,
+  Play,
   Search,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 
@@ -36,9 +44,12 @@ import {
   type StudyTopicStatus,
 } from "@/lib/access-db";
 import { Chip, type ChipType } from "@/components/ui/chip";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Drawer } from "@/components/ui/drawer";
 import { CommonButton, IconButton, ListBox, Toolbar, ToolbarItem } from "@/components/ui/button-system";
+import { Tabs } from "@/components/ui/tabs";
 import { RichTextEditor, type RichTextBlock, type RichTextBlockType } from "@/components/ui/rich-text-editor";
+import { LessonAnnotationsBoard } from "@/components/lesson-annotations-board";
 
 function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -69,6 +80,21 @@ const materialOptions: Array<{ value: StudyMaterialType; label: string }> = [
   { value: "reference", label: "Referencia" },
 ];
 
+const courseCategoryOptions = [
+  { value: "course", label: "Curso" },
+  { value: "bootcamp", label: "Bootcamp" },
+  { value: "webinar", label: "Webinar" },
+  { value: "article", label: "Artigo" },
+  { value: "workshop", label: "Workshop" },
+  { value: "book", label: "Livro" },
+] as const;
+
+const courseCategoryComboboxOptions: ComboboxOption[] = courseCategoryOptions.map((option) => ({
+  ...option,
+  chipType: "secondary",
+  chipSurface: "neutral",
+}));
+
 const editorTypes: RichTextBlockType[] = [
   "paragraph",
   "h1",
@@ -84,24 +110,26 @@ const editorTypes: RichTextBlockType[] = [
 
 type DrawerState =
   | { mode: "course"; courseId?: string }
-  | { mode: "module"; moduleId?: string }
-  | { mode: "topic"; moduleId: string; topicId?: string }
   | { mode: "pending"; pendingId?: string }
   | null;
 
 type StudySortMode = "manual" | "updated_desc" | "progress_desc" | "priority_desc";
+type StudiesTab = "general" | "learning" | "pending";
 
 type CourseDraft = {
   title: string;
   description: string;
+  category: string;
+  coverImageUrl: string;
   priority: StudyPriority;
 };
 
-type ModuleDraft = {
-  courseId: string;
-  title: string;
-  description: string;
-  priority: StudyPriority;
+const emptyCourseDraft: CourseDraft = {
+  title: "",
+  description: "",
+  category: "course",
+  coverImageUrl: "",
+  priority: null,
 };
 
 type TopicDraft = {
@@ -110,7 +138,7 @@ type TopicDraft = {
   status: StudyTopicStatus;
   priority: StudyPriority;
   dueAt: string;
-  notes: RichTextBlock[];
+  notes: StudyNoteBlock[];
 };
 
 type PendingDraft = {
@@ -168,7 +196,16 @@ function emptyEditorBlock(): RichTextBlock {
 function toEditorBlocks(notes: StudyNoteBlock[]): RichTextBlock[] {
   const blocks = notes
     .map((block): RichTextBlock | null => {
-      const type = editorTypes.includes(block.type as RichTextBlockType) ? (block.type as RichTextBlockType) : "paragraph";
+      if (!editorTypes.includes(block.type as RichTextBlockType)) {
+        return typeof block.text === "string" && block.text.trim()
+          ? {
+              id: block.id || `block-${crypto.randomUUID()}`,
+              type: "paragraph",
+              text: block.text,
+            }
+          : null;
+      }
+      const type = block.type as RichTextBlockType;
       return {
         id: block.id || `block-${crypto.randomUUID()}`,
         type,
@@ -192,8 +229,30 @@ function fromEditorBlocks(blocks: RichTextBlock[]): StudyNoteBlock[] {
   }));
 }
 
+function toTopicDraft(moduleId: string, topic?: StudyTopic): TopicDraft {
+  return {
+    moduleId,
+    title: topic?.title ?? "",
+    status: topic?.status ?? "not_started",
+    priority: topic?.priority ?? null,
+    dueAt: toDateInputValue(topic?.dueAt ?? null),
+    notes: topic?.notes?.length ? topic.notes : fromEditorBlocks([emptyEditorBlock()]),
+  };
+}
+
 function noteText(notes: StudyNoteBlock[]) {
-  return notes.map((block) => block.text ?? "").join(" ").toLowerCase();
+  return notes
+    .flatMap((block) => {
+      if (Array.isArray(block.elements)) {
+        return block.elements
+          .filter((element): element is Record<string, unknown> => Boolean(element) && typeof element === "object")
+          .map((element) => (typeof element.text === "string" ? element.text : ""));
+      }
+
+      return block.text ?? "";
+    })
+    .join(" ")
+    .toLowerCase();
 }
 
 function formatDate(value: string | null) {
@@ -225,14 +284,6 @@ function priorityWeight(priority: StudyPriority) {
   return 0;
 }
 
-function topicStatusLabel(status: StudyTopicStatus) {
-  return topicStatusOptions.find((option) => option.value === status)?.label ?? "Nao iniciado";
-}
-
-function topicStatusChip(status: StudyTopicStatus): ChipType {
-  return topicStatusOptions.find((option) => option.value === status)?.chip ?? "tertiary";
-}
-
 function pendingStatusLabel(status: StudyPendingStatus) {
   return pendingStatusOptions.find((option) => option.value === status)?.label ?? "Pendente";
 }
@@ -246,6 +297,10 @@ function materialIcon(type: StudyMaterialType) {
   if (type === "file_reference") return <FileText aria-hidden="true" className="h-4 w-4" />;
   if (type === "reference") return <BookOpen aria-hidden="true" className="h-4 w-4" />;
   return <LinkIcon aria-hidden="true" className="h-4 w-4" />;
+}
+
+function courseCategoryLabel(category: string) {
+  return courseCategoryOptions.find((option) => option.value === category)?.label ?? (category || "Curso");
 }
 
 async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
@@ -280,10 +335,17 @@ function recalculateStats(modules: StudyModule[], pendingItems: StudyPendingItem
   };
 }
 
-export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashboardData }) {
+export function AdminStudiesDashboard({
+  initialData,
+  courseId,
+}: {
+  initialData: StudyDashboardData;
+  courseId?: string;
+}) {
   const [courses, setCourses] = useState(initialData.courses);
   const [pendingItems, setPendingItems] = useState(initialData.pendingItems);
-  const [selectedCourseId, setSelectedCourseId] = useState(initialData.courses[0]?.id ?? "");
+  const [selectedCourseId, setSelectedCourseId] = useState(courseId ?? initialData.courses[0]?.id ?? "");
+  const [activeTab, setActiveTab] = useState<StudiesTab>("learning");
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
@@ -293,8 +355,9 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
   const [priorityFilter, setPriorityFilter] = useState<"all" | Exclude<StudyPriority, null>>("all");
   const [sortMode, setSortMode] = useState<StudySortMode>("manual");
   const [drawer, setDrawer] = useState<DrawerState>(null);
-  const [courseDraft, setCourseDraft] = useState<CourseDraft>({ title: "", description: "", priority: null });
-  const [moduleDraft, setModuleDraft] = useState<ModuleDraft>({ courseId: initialData.courses[0]?.id ?? "", title: "", description: "", priority: null });
+  const [courseDraft, setCourseDraft] = useState<CourseDraft>(emptyCourseDraft);
+  const [inlineCourseDraft, setInlineCourseDraft] = useState<CourseDraft | null>(null);
+  const [selectedInlineTopicId, setSelectedInlineTopicId] = useState<string | null>(null);
   const [inlineModuleCourseId, setInlineModuleCourseId] = useState<string | null>(null);
   const [inlineModuleDraft, setInlineModuleDraft] = useState<InlineModuleDraft>(emptyInlineModuleDraft);
   const [inlineLessonModuleId, setInlineLessonModuleId] = useState<string | null>(null);
@@ -305,7 +368,7 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     status: "not_started",
     priority: null,
     dueAt: "",
-    notes: [emptyEditorBlock()],
+    notes: fromEditorBlocks([emptyEditorBlock()]),
   });
   const [pendingDraft, setPendingDraft] = useState<PendingDraft>({
     moduleId: "",
@@ -382,11 +445,6 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
         .slice(0, 5),
     [allTopics],
   );
-  const selectedTopic =
-    drawer?.mode === "topic" && drawer.topicId
-      ? courses.flatMap((course) => course.modules).flatMap((module) => module.topics).find((topic) => topic.id === drawer.topicId) ?? null
-      : null;
-
   const filteredCourses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const nextCourses = courses
@@ -394,7 +452,8 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
         const courseMatches =
           !normalizedQuery ||
           course.title.toLowerCase().includes(normalizedQuery) ||
-          course.description.toLowerCase().includes(normalizedQuery);
+          course.description.toLowerCase().includes(normalizedQuery) ||
+          courseCategoryLabel(course.category).toLowerCase().includes(normalizedQuery);
         const courseModules = course.modules
           .filter((module) => moduleFilter === "all" || module.id === moduleFilter)
           .map((module) => {
@@ -453,11 +512,56 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
 
   const activeCourse =
     filteredCourses.find((course) => course.id === selectedCourseId) ??
+    (courseId ? courses.find((course) => course.id === courseId) : null) ??
     filteredCourses[0] ??
     courses.find((course) => course.id === selectedCourseId) ??
     courses[0] ??
     null;
-  const activeCourseModules = activeCourse?.modules ?? [];
+  const activeCourseModules = useMemo(() => activeCourse?.modules ?? [], [activeCourse]);
+  const activeCourseTopics = useMemo(() => activeCourseModules.flatMap((module) => module.topics), [activeCourseModules]);
+  const selectedInlineTopic = selectedInlineTopicId
+    ? activeCourseTopics.find((topic) => topic.id === selectedInlineTopicId) ?? null
+    : courseId
+      ? activeCourseTopics.find((topic) => topic.status === "in_progress") ??
+        activeCourseTopics.find((topic) => topic.status !== "done") ??
+        activeCourseTopics[0] ??
+        null
+      : null;
+  const activeTopicDraft =
+    courseId && selectedInlineTopic && selectedInlineTopic.id !== selectedInlineTopicId
+      ? toTopicDraft(selectedInlineTopic.moduleId, selectedInlineTopic)
+      : topicDraft;
+  const selectedTopic = selectedInlineTopic;
+  const selectedInlineTopicIndex = selectedInlineTopic
+    ? activeCourseTopics.findIndex((topic) => topic.id === selectedInlineTopic.id)
+    : -1;
+  const previousInlineTopic = selectedInlineTopicIndex > 0 ? activeCourseTopics[selectedInlineTopicIndex - 1] : null;
+  const nextInlineTopic =
+    selectedInlineTopicIndex >= 0 && selectedInlineTopicIndex < activeCourseTopics.length - 1
+      ? activeCourseTopics[selectedInlineTopicIndex + 1]
+      : null;
+
+  useEffect(() => {
+    if (!courseId || !activeCourse) return;
+
+    if (!activeCourseTopics.length) {
+      if (selectedInlineTopicId) setSelectedInlineTopicId(null);
+      return;
+    }
+
+    const currentTopic = activeCourseTopics.find((topic) => topic.id === selectedInlineTopicId);
+    const nextTopic =
+      currentTopic ??
+      activeCourseTopics.find((topic) => topic.status === "in_progress") ??
+      activeCourseTopics.find((topic) => topic.status !== "done") ??
+      activeCourseTopics[0];
+
+    if (!nextTopic || nextTopic.id === selectedInlineTopicId) return;
+
+    setSelectedInlineTopicId(nextTopic.id);
+    setTopicDraft(toTopicDraft(nextTopic.moduleId, nextTopic));
+    setMaterialDraft({ type: "link", title: "", url: "", description: "", metadata: "" });
+  }, [activeCourse, activeCourseTopics, courseId, selectedInlineTopicId]);
 
   const filteredPendingItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -472,7 +576,10 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     const data = await apiRequest<StudyDashboardData>("/api/admin/studies");
     setCourses(data.courses);
     setPendingItems(data.pendingItems);
-    setSelectedCourseId((current) => data.courses.some((course) => course.id === current) ? current : (data.courses[0]?.id ?? ""));
+    setSelectedCourseId((current) => {
+      if (courseId && data.courses.some((course) => course.id === courseId)) return courseId;
+      return data.courses.some((course) => course.id === current) ? current : (data.courses[0]?.id ?? "");
+    });
     if (message) setFeedback(message);
   }
 
@@ -482,33 +589,38 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     setCourseDraft({
       title: course?.title ?? "",
       description: course?.description ?? "",
+      category: course?.category ?? "course",
+      coverImageUrl: course?.coverImageUrl ?? "",
       priority: course?.priority ?? null,
     });
   }
 
-  function openModuleDrawer(module?: StudyModule, courseId = activeCourse?.id ?? "") {
+  function startInlineCourse() {
     setError(null);
-    setDrawer({ mode: "module", moduleId: module?.id });
-    setModuleDraft({
-      courseId: module?.courseId ?? courseId,
-      title: module?.title ?? "",
-      description: module?.description ?? "",
-      priority: module?.priority ?? null,
-    });
+    setDrawer(null);
+    setQuery("");
+    setInlineCourseDraft(emptyCourseDraft);
   }
 
-  function openTopicDrawer(moduleId: string, topic?: StudyTopic) {
-    setError(null);
-    setDrawer({ mode: "topic", moduleId, topicId: topic?.id });
-    setTopicDraft({
-      moduleId,
-      title: topic?.title ?? "",
-      status: topic?.status ?? "not_started",
-      priority: topic?.priority ?? null,
-      dueAt: toDateInputValue(topic?.dueAt ?? null),
-      notes: toEditorBlocks(topic?.notes ?? []),
-    });
+  function cancelInlineCourse() {
+    setInlineCourseDraft(null);
+  }
+
+  function loadTopicDraft(moduleId: string, topic?: StudyTopic) {
+    setTopicDraft(toTopicDraft(moduleId, topic));
     setMaterialDraft({ type: "link", title: "", url: "", description: "", metadata: "" });
+  }
+
+  function openInlineTopic(moduleId: string, topic: StudyTopic) {
+    setError(null);
+    setSelectedInlineTopicId(topic.id);
+    loadTopicDraft(moduleId, topic);
+  }
+
+  function openTopicCourse(topic: Pick<StudyTopic, "moduleId">) {
+    const course = courses.find((currentCourse) => currentCourse.modules.some((module) => module.id === topic.moduleId));
+    if (!course) return;
+    window.location.href = `/studies/${course.id}`;
   }
 
   function openPendingDrawer(item?: StudyPendingItem) {
@@ -553,33 +665,53 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     }
   }
 
-  async function saveModule() {
-    if (!moduleDraft.title.trim()) {
-      setError("Informe o titulo do modulo.");
+  async function saveInlineCourse(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!inlineCourseDraft?.title.trim()) {
+      setError("Informe o titulo do curso.");
       return;
     }
-    if (!moduleDraft.courseId) {
-      setError("Selecione um curso para o modulo.");
-      return;
-    }
+
     setSaving(true);
     setError(null);
     try {
-      if (drawer?.mode === "module" && drawer.moduleId) {
-        await apiRequest(`/api/admin/studies/modules/${drawer.moduleId}`, {
-          method: "PATCH",
-          body: JSON.stringify(moduleDraft),
-        });
-      } else {
-        await apiRequest("/api/admin/studies/modules", {
-          method: "POST",
-          body: JSON.stringify(moduleDraft),
-        });
-      }
-      setDrawer(null);
-      await reload("Modulo salvo.");
+      await apiRequest("/api/admin/studies", {
+        method: "POST",
+        body: JSON.stringify(inlineCourseDraft),
+      });
+      cancelInlineCourse();
+      await reload("Curso salvo.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nao foi possivel salvar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveCourseCover(course: StudyCourse, coverImageUrl: string) {
+    setError(null);
+    await apiRequest(`/api/admin/studies/courses/${course.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title: course.title,
+        description: course.description,
+        category: course.category,
+        coverImageUrl: coverImageUrl.trim(),
+        priority: course.priority,
+      }),
+    });
+    await reload(coverImageUrl.trim() ? "Imagem do curso salva." : "Imagem do curso removida.");
+  }
+
+  async function deleteCourse(course: StudyCourse) {
+    if (!window.confirm(`Excluir o curso "${course.title}" e todo o conteudo dele?`)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/studies/courses/${course.id}`, { method: "DELETE" });
+      await reload("Curso excluido.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel excluir o curso.");
     } finally {
       setSaving(false);
     }
@@ -626,24 +758,33 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     }
   }
 
+  function startInlineLesson(moduleId: string) {
+    setError(null);
+    setInlineModuleCourseId(null);
+    setInlineLessonModuleId(moduleId);
+    setInlineLessonDraft({ ...emptyInlineLessonDraft, moduleId });
+  }
+
   async function saveTopic() {
-    if (!topicDraft.title.trim() || !topicDraft.moduleId) {
+    const draftToSave = activeTopicDraft;
+    if (!draftToSave.title.trim() || !draftToSave.moduleId) {
       setError("Informe modulo e titulo da aula.");
       return;
     }
     setSaving(true);
     setError(null);
     const payload = {
-      moduleId: topicDraft.moduleId,
-      title: topicDraft.title,
-      status: topicDraft.status,
-      priority: topicDraft.priority,
-      dueAt: fromDateInputValue(topicDraft.dueAt),
-      notes: fromEditorBlocks(topicDraft.notes),
+      moduleId: draftToSave.moduleId,
+      title: draftToSave.title,
+      status: draftToSave.status,
+      priority: draftToSave.priority,
+      dueAt: fromDateInputValue(draftToSave.dueAt),
+      notes: draftToSave.notes,
     };
+    const editingTopicId = selectedInlineTopic?.id ?? selectedInlineTopicId;
     try {
-      if (drawer?.mode === "topic" && drawer.topicId) {
-        await apiRequest(`/api/admin/studies/topics/${drawer.topicId}`, {
+      if (editingTopicId) {
+        await apiRequest(`/api/admin/studies/topics/${editingTopicId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
@@ -653,19 +794,12 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
           body: JSON.stringify(payload),
         });
       }
-      setDrawer(null);
       await reload("Aula salva.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nao foi possivel salvar.");
     } finally {
       setSaving(false);
     }
-  }
-
-  function startInlineLesson(moduleId: string) {
-    setError(null);
-    setInlineLessonModuleId(moduleId);
-    setInlineLessonDraft({ ...emptyInlineLessonDraft, moduleId });
   }
 
   function cancelInlineLesson() {
@@ -766,12 +900,6 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
     if (!window.confirm(`Excluir o modulo "${module.title}" e todo o conteudo dele?`)) return;
     await apiRequest(`/api/admin/studies/modules/${module.id}`, { method: "DELETE" });
     await reload("Modulo excluido.");
-  }
-
-  async function deleteCourse(course: StudyCourse) {
-    if (!window.confirm(`Excluir o curso "${course.title}" e todos os modulos e aulas dele?`)) return;
-    await apiRequest(`/api/admin/studies/courses/${course.id}`, { method: "DELETE" });
-    await reload("Curso excluido.");
   }
 
   async function deleteTopic(topic: StudyTopic) {
@@ -997,25 +1125,140 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <CourseHero
-          activeCourse={activeCourse}
-          stats={stats}
-          coursesInProgress={coursesInProgress.length}
-          onCreateCourse={() => openCourseDrawer()}
-          onCreateModule={() => activeCourse && startInlineModule(activeCourse.id)}
-        />
-        <StudyQueuePanel
-          nextTopics={nextTopics}
-          pendingItems={filteredPendingItems.slice(0, 4)}
-          onOpenTopic={(topic) => openTopicDrawer(topic.moduleId, topic)}
-          onOpenPending={openPendingDrawer}
-          onCreatePending={() => openPendingDrawer()}
-        />
+      {courseId ? (
+        <>
+          {feedback || error ? (
+            <div className="min-w-0">
+              {feedback ? <p className="rounded-xl border border-[#bddfce] bg-[#e8f8ef] px-3 py-2 text-sm font-medium text-[#276348]">{feedback}</p> : null}
+              {error ? <p className="rounded-xl border border-[#f2c5cc] bg-[#fdeef1] px-3 py-2 text-sm font-medium text-[#9a3042]">{error}</p> : null}
+            </div>
+          ) : null}
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+            <LessonWorkspace
+              course={activeCourse}
+              topic={selectedInlineTopic}
+              modules={activeCourseModules}
+              draft={activeTopicDraft}
+              onDraftChange={setTopicDraft}
+              materialDraft={materialDraft}
+              onMaterialDraftChange={setMaterialDraft}
+              onAddMaterial={addMaterial}
+              onDeleteMaterial={deleteMaterial}
+              onSave={saveTopic}
+              saving={saving}
+              previousTopic={previousInlineTopic}
+              nextTopic={nextInlineTopic}
+              onOpenTopic={openInlineTopic}
+            />
+            <ModuleDetailPanel
+              course={activeCourse}
+              saving={saving}
+              draggedModuleId={draggedModuleId}
+              draggedTopic={draggedTopic}
+              dropTargetId={dropTargetId}
+              selectedTopicId={selectedInlineTopic?.id ?? selectedInlineTopicId}
+              panelMode="sidebar"
+              onCreateCourse={() => openCourseDrawer()}
+              onDeleteModule={deleteModule}
+              onCreateModule={startInlineModule}
+              inlineModuleDraft={activeCourse && inlineModuleCourseId === activeCourse.id ? inlineModuleDraft : null}
+              onInlineModuleChange={setInlineModuleDraft}
+              onInlineModuleSubmit={saveInlineModule}
+              onInlineModuleCancel={cancelInlineModule}
+              onCreateTopic={startInlineLesson}
+              inlineLessonModuleId={inlineLessonModuleId}
+              inlineLessonDraft={inlineLessonDraft}
+              onInlineLessonChange={setInlineLessonDraft}
+              onInlineLessonSubmit={saveInlineLesson}
+              onInlineLessonCancel={cancelInlineLesson}
+              onOpenTopic={openInlineTopic}
+              onDeleteTopic={deleteTopic}
+              onSetTopicStatus={setTopicStatus}
+              onModuleDragStart={(moduleId) => setDraggedModuleId(moduleId)}
+              onModuleDragOver={allowDrop}
+              onModuleDrop={handleModuleDrop}
+              onModuleDragEnd={() => {
+                setDraggedModuleId(null);
+                setDropTargetId(null);
+              }}
+              onTopicDragStart={(moduleId, topicId) => setDraggedTopic({ moduleId, topicId })}
+              onTopicDragOver={allowDrop}
+              onTopicDrop={handleTopicDrop}
+              onTopicDragEnd={() => {
+                setDraggedTopic(null);
+                setDropTargetId(null);
+              }}
+            />
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <Tabs<StudiesTab>
+              value={activeTab}
+              onChange={setActiveTab}
+              items={[
+                {
+                  id: "general",
+                  label: "Geral",
+                  count: courses.length,
+                  icon: <Layers3 aria-hidden="true" className="h-5 w-5" />,
+                },
+                {
+                  id: "learning",
+                  label: "Meu aprendizado",
+                  count: coursesInProgress.length,
+                  icon: <BookOpen aria-hidden="true" className="h-5 w-5" />,
+                },
+                {
+                  id: "pending",
+                  label: "Pendencias",
+                  count: pendingItems.filter((item) => item.status !== "done").length,
+                  icon: <CalendarClock aria-hidden="true" className="h-5 w-5" />,
+                },
+              ]}
+            />
+          </div>
+
+          {activeTab === "general" ? (
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <CourseHero
+                activeCourse={activeCourse}
+                stats={stats}
+                coursesInProgress={coursesInProgress.length}
+                onCreateCourse={() => openCourseDrawer()}
+                onCreateModule={() => activeCourse && startInlineModule(activeCourse.id)}
+              />
+              <StudyQueuePanel
+                nextTopics={nextTopics}
+                pendingItems={filteredPendingItems.slice(0, 4)}
+                onOpenTopic={openTopicCourse}
+                onOpenPending={openPendingDrawer}
+                onCreatePending={() => openPendingDrawer()}
+              />
+            </section>
+          ) : null}
+
+      {activeTab === "learning" ? (
+        <>
+      <section className="space-y-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-[#151b29]">Continue aprendendo...</h3>
+          </div>
+        </div>
+        {coursesInProgress.length ? (
+          <CourseLearningRail courses={coursesInProgress} onSaveCover={saveCourseCover} onDeleteCourse={deleteCourse} />
+        ) : (
+          <div className="rounded-[20px] border border-dashed border-[#ccd7ea] bg-[#fafcff] p-5 text-sm text-[#69738a]">
+            Nenhum curso em andamento. Inicie uma aula para ela aparecer aqui.
+          </div>
+        )}
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {feedback ? <p className="rounded-xl border border-[#bddfce] bg-[#e8f8ef] px-3 py-2 text-sm font-medium text-[#276348]">{feedback}</p> : null}
           {error ? <p className="rounded-xl border border-[#f2c5cc] bg-[#fdeef1] px-3 py-2 text-sm font-medium text-[#9a3042]">{error}</p> : null}
         </div>
@@ -1136,98 +1379,52 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
           </ToolbarItem>
 
           <ToolbarItem>
-            <CommonButton type="button" variant="primary" className="h-10 px-3" onClick={() => openCourseDrawer()}>
+            <CommonButton type="button" variant="primary" className="h-10 px-3" onClick={startInlineCourse}>
               <Plus aria-hidden="true" className="h-4 w-4" />
-              Curso
+              Novo curso
             </CommonButton>
           </ToolbarItem>
         </Toolbar>
       </div>
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(360px,430px)_minmax(0,1fr)]">
-        <section
-          className="rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)]"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={() => handleModuleDrop(null)}
-          aria-label="Catalogo de cursos"
-        >
+      <section className="space-y-4" aria-label="Todos os cursos">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-[#151b29]">Catalogo de cursos</h3>
-              <p className="text-sm text-[#6c7489]">
-                {filteredCourses.length} {filteredCourses.length === 1 ? "curso organizado" : "cursos organizados"}
-              </p>
+              <h3 className="text-lg font-semibold text-[#151b29]">Todos os cursos</h3>
             </div>
-            <IconButton type="button" variant="info" aria-label="Criar curso" title="Criar curso" onClick={() => openCourseDrawer()}>
-              <Plus aria-hidden="true" className="h-4 w-4" />
-            </IconButton>
           </div>
 
-          {filteredCourses.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-1">
-              {filteredCourses.map((course, index) => (
-                <CourseModuleCard
-                  key={course.id}
-                  course={course}
-                  index={index}
-                  selected={activeCourse?.id === course.id}
-                  onSelect={() => setSelectedCourseId(course.id)}
-                  onEdit={() => openCourseDrawer(course)}
-                  onDelete={() => deleteCourse(course)}
-                  onCreateModule={() => startInlineModule(course.id)}
-                  inlineModuleDraft={inlineModuleCourseId === course.id ? inlineModuleDraft : null}
+          {filteredCourses.length || inlineCourseDraft ? (
+            <div className="grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {inlineCourseDraft ? (
+                <InlineCourseCard
+                  draft={inlineCourseDraft}
+                  onChange={setInlineCourseDraft}
+                  onSubmit={saveInlineCourse}
+                  onCancel={cancelInlineCourse}
                   saving={saving}
-                  onInlineModuleChange={setInlineModuleDraft}
-                  onInlineModuleSubmit={saveInlineModule}
-                  onInlineModuleCancel={cancelInlineModule}
                 />
+              ) : null}
+              {filteredCourses.map((course, index) => (
+                <CourseLearningCard key={course.id} course={course} index={index} variant="catalog" onSaveCover={saveCourseCover} onDeleteCourse={deleteCourse} />
               ))}
             </div>
           ) : (
-            <EmptyState title="Nenhum curso encontrado" description="Crie um curso ou ajuste os filtros para retomar a trilha de estudos." actionLabel="Criar curso" onAction={() => openCourseDrawer()} />
+            <EmptyState title="Nenhum curso encontrado" description="Crie um curso ou ajuste os filtros para retomar a trilha de estudos." actionLabel="Novo curso" onAction={startInlineCourse} />
           )}
         </section>
+        </>
+      ) : null}
 
-        <ModuleDetailPanel
-          course={activeCourse}
-          saving={saving}
-          draggedModuleId={draggedModuleId}
-          draggedTopic={draggedTopic}
-          dropTargetId={dropTargetId}
-          onEditCourse={openCourseDrawer}
-          onCreateCourse={() => openCourseDrawer()}
-          onEditModule={(module) => openModuleDrawer(module, activeCourse?.id ?? "")}
-          onDeleteModule={deleteModule}
-          onCreateModule={startInlineModule}
-          inlineModuleDraft={activeCourse && inlineModuleCourseId === activeCourse.id ? inlineModuleDraft : null}
-          onInlineModuleChange={setInlineModuleDraft}
-          onInlineModuleSubmit={saveInlineModule}
-          onInlineModuleCancel={cancelInlineModule}
-          onCreateTopic={startInlineLesson}
-          inlineLessonModuleId={inlineLessonModuleId}
-          inlineLessonDraft={inlineLessonDraft}
-          onInlineLessonChange={setInlineLessonDraft}
-          onInlineLessonSubmit={saveInlineLesson}
-          onInlineLessonCancel={cancelInlineLesson}
-          onOpenTopic={(moduleId, topic) => openTopicDrawer(moduleId, topic)}
-          onDeleteTopic={deleteTopic}
-          onSetTopicStatus={setTopicStatus}
-          onModuleDragStart={(moduleId) => setDraggedModuleId(moduleId)}
-          onModuleDragOver={allowDrop}
-          onModuleDrop={handleModuleDrop}
-          onModuleDragEnd={() => {
-            setDraggedModuleId(null);
-            setDropTargetId(null);
-          }}
-          onTopicDragStart={(moduleId, topicId) => setDraggedTopic({ moduleId, topicId })}
-          onTopicDragOver={allowDrop}
-          onTopicDrop={handleTopicDrop}
-          onTopicDragEnd={() => {
-            setDraggedTopic(null);
-            setDropTargetId(null);
-          }}
+      {activeTab === "pending" ? (
+        <PendingTabPanel
+          pendingItems={filteredPendingItems}
+          onOpenPending={openPendingDrawer}
+          onCreatePending={() => openPendingDrawer()}
         />
-      </div>
+      ) : null}
+        </>
+      )}
 
       <Drawer
         open={Boolean(drawer)}
@@ -1237,48 +1434,25 @@ export function AdminStudiesDashboard({ initialData }: { initialData: StudyDashb
             ? drawer.courseId
               ? "Editar curso"
               : "Novo curso"
-            : drawer?.mode === "module"
-            ? drawer.moduleId
-              ? "Editar modulo"
-              : "Novo modulo"
-            : drawer?.mode === "topic"
-              ? drawer.topicId
-                ? "Editar aula"
-                : "Nova aula"
-              : drawer?.mode === "pending"
-                ? drawer.pendingId
-                  ? "Editar pendencia"
-                  : "Nova pendencia"
-                : ""
+            : drawer?.mode === "pending"
+              ? drawer.pendingId
+                ? "Editar pendencia"
+                : "Nova pendencia"
+              : ""
         }
         description="As alteracoes sao salvas no banco e aparecem no dashboard."
         primaryAction={{
           label: saving ? "Salvando..." : "Salvar",
-          onClick: drawer?.mode === "course" ? saveCourse : drawer?.mode === "module" ? saveModule : drawer?.mode === "topic" ? saveTopic : savePending,
+          onClick: drawer?.mode === "course" ? saveCourse : savePending,
           disabled: saving,
         }}
         secondaryAction={drawer?.mode === "pending" && drawer.pendingId ? { label: "Excluir", onClick: () => {
           const item = pendingItems.find((pendingItem) => pendingItem.id === drawer.pendingId);
           if (item) void deletePending(item).then(() => setDrawer(null));
         } } : undefined}
-        fullScreen={drawer?.mode === "topic"}
       >
         {drawer?.mode === "course" ? (
           <CourseForm draft={courseDraft} onChange={setCourseDraft} />
-        ) : drawer?.mode === "module" ? (
-          <ModuleForm courses={courses} draft={moduleDraft} onChange={setModuleDraft} />
-        ) : drawer?.mode === "topic" ? (
-          <TopicForm
-            modules={modules}
-            draft={topicDraft}
-            onChange={setTopicDraft}
-            selectedTopic={selectedTopic}
-            materialDraft={materialDraft}
-            onMaterialDraftChange={setMaterialDraft}
-            onAddMaterial={addMaterial}
-            onDeleteMaterial={deleteMaterial}
-            saving={saving}
-          />
         ) : drawer?.mode === "pending" ? (
           <PendingForm modules={modules} draft={pendingDraft} onChange={setPendingDraft} />
         ) : null}
@@ -1385,161 +1559,628 @@ function HeroStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CourseModuleCard({
+function CourseLearningRail({
+  courses,
+  onSaveCover,
+  onDeleteCourse,
+}: {
+  courses: StudyCourse[];
+  onSaveCover: (course: StudyCourse, coverImageUrl: string) => Promise<void>;
+  onDeleteCourse: (course: StudyCourse) => Promise<void>;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const [scrollState, setScrollState] = useState({ hasOverflow: false, canScrollPrev: false, canScrollNext: false });
+
+  function updateScrollState() {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+    setScrollState({
+      hasOverflow: maxScrollLeft > 1,
+      canScrollPrev: rail.scrollLeft > 1,
+      canScrollNext: rail.scrollLeft < maxScrollLeft - 1,
+    });
+  }
+
+  function scrollCourses(direction: "prev" | "next") {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    rail.scrollBy({
+      left: direction === "next" ? rail.clientWidth * 0.82 : -rail.clientWidth * 0.82,
+      behavior: "smooth",
+    });
+  }
+
+  useEffect(() => {
+    updateScrollState();
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateScrollState);
+    observer?.observe(rail);
+    window.addEventListener("resize", updateScrollState);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateScrollState);
+    };
+  }, [courses.length]);
+
+  return (
+    <div className="space-y-2">
+      {scrollState.hasOverflow ? (
+        <div className="flex justify-end gap-2">
+          <IconButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Cursos anteriores"
+            title="Cursos anteriores"
+            onClick={() => scrollCourses("prev")}
+            disabled={!scrollState.canScrollPrev}
+          >
+            <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Proximos cursos"
+            title="Proximos cursos"
+            onClick={() => scrollCourses("next")}
+            disabled={!scrollState.canScrollNext}
+          >
+            <ChevronRight aria-hidden="true" className="h-4 w-4" />
+          </IconButton>
+        </div>
+      ) : null}
+
+      <div
+        ref={railRef}
+        onScroll={updateScrollState}
+        className="flex snap-x gap-3 overflow-x-auto pb-2 pr-2"
+      >
+        {courses.map((course, index) => (
+          <CourseLearningCard key={course.id} course={course} index={index} onSaveCover={onSaveCover} onDeleteCourse={onDeleteCourse} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CourseLearningCard({
   course,
   index,
-  selected,
-  saving,
-  inlineModuleDraft,
-  onSelect,
-  onEdit,
-  onDelete,
-  onCreateModule,
-  onInlineModuleChange,
-  onInlineModuleSubmit,
-  onInlineModuleCancel,
+  variant = "rail",
+  onSaveCover,
+  onDeleteCourse,
 }: {
   course: StudyCourse;
   index: number;
-  selected: boolean;
-  saving: boolean;
-  inlineModuleDraft: InlineModuleDraft | null;
-  onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onCreateModule: () => void;
-  onInlineModuleChange: (draft: InlineModuleDraft) => void;
-  onInlineModuleSubmit: (event?: FormEvent<HTMLFormElement>) => void;
-  onInlineModuleCancel: () => void;
+  variant?: "rail" | "catalog";
+  onSaveCover: (course: StudyCourse, coverImageUrl: string) => Promise<void>;
+  onDeleteCourse: (course: StudyCourse) => Promise<void>;
 }) {
   const accent = courseAccent(index);
   const lessons = course.modules.flatMap((module) => module.topics);
   const completed = lessons.filter((topic) => topic.status === "done").length;
   const active = lessons.filter((topic) => topic.status === "in_progress").length;
+  const statusLabel = course.progress === 100 ? "Concluido" : active ? "Em andamento" : "Nao iniciado";
+  const statusType: ChipType = course.progress === 100 ? "success" : active ? "info" : "tertiary";
+  const statusIcon =
+    course.progress === 100 ? (
+      <CheckCircle2 aria-hidden="true" />
+    ) : active ? (
+      <Play aria-hidden="true" />
+    ) : (
+      <BookOpen aria-hidden="true" />
+    );
+  const isCatalog = variant === "catalog";
 
   return (
-    <article
-      onClick={onSelect}
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cx(
-        "group cursor-pointer overflow-hidden rounded-[24px] border bg-white text-left shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#c6d2e5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2",
-        selected ? "border-[#9db2e2] ring-2 ring-[#dce6ff]" : "border-[#dde4ef]",
-      )}
-    >
-      <div className={cx("flex min-h-[94px] items-start justify-between p-4", accent.cover)}>
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-white/78 shadow-[var(--ds-shadow-soft)]">
-          {accent.icon}
+    <article className={cx("relative", isCatalog ? "h-full w-full" : "w-[min(460px,calc(100vw-3rem))] shrink-0 snap-start")}>
+      <Link
+        href={`/studies/${course.id}`}
+        className={cx(
+          "group flex overflow-hidden rounded-[20px] border border-[#dde4ef] bg-white text-left shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#c6d2e5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2",
+          isCatalog ? "h-full min-h-[300px] w-full flex-col" : "h-[198px] w-full",
+        )}
+      >
+        <div
+          className={cx(
+            "relative flex shrink-0 flex-col items-start justify-between bg-cover bg-center p-3",
+            isCatalog ? "h-28 w-full" : "w-32",
+            course.coverImageUrl ? "text-white" : accent.cover,
+          )}
+          style={course.coverImageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(10, 15, 25, 0.2), rgba(10, 15, 25, 0.64)), url("${course.coverImageUrl}")` } : undefined}
+        >
+          {!course.coverImageUrl ? (
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] bg-white/78 shadow-[var(--ds-shadow-soft)]">
+              {accent.icon}
+            </div>
+          ) : (
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] bg-white/20 shadow-[var(--ds-shadow-soft)] backdrop-blur">
+              <BookOpen aria-hidden="true" className="h-4 w-4" />
+            </span>
+          )}
+          <Chip label={statusLabel} type={statusType} surface="neutral" size="sm" showIconLeft iconLeft={statusIcon} />
         </div>
-        <Chip label={course.progress === 100 ? "Concluido" : active ? "Em andamento" : "Nao iniciado"} type={course.progress === 100 ? "success" : active ? "info" : "tertiary"} size="sm" />
-      </div>
 
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h4 className="line-clamp-2 text-[1.05rem] font-semibold leading-6 text-[#141a27]">{course.title}</h4>
-            <p className="mt-1 line-clamp-2 text-sm leading-5 text-[#6c7489]">
-              {course.description || "Curso sem descricao."}
-            </p>
+        <div className={cx("flex min-w-0 flex-1 flex-col", isCatalog ? "p-4" : "p-4")}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={courseCategoryLabel(course.category)} type={accent.chip} surface="neutral" size="sm" />
+            {course.priority ? <Chip label={priorityLabel(course.priority)} type={priorityChip(course.priority)} size="sm" /> : null}
           </div>
-          <div className="flex shrink-0 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          <h4 className={cx("font-semibold text-[#141a27]", isCatalog ? "mt-3 line-clamp-2 text-[1.02rem] leading-6" : "mt-2 min-h-6 text-[1rem] leading-6")}>{course.title}</h4>
+          {course.description ? <p className={cx("mt-1 text-[#6c7489]", isCatalog ? "line-clamp-3 text-sm leading-5" : "line-clamp-2 text-sm leading-5")}>{course.description}</p> : null}
+
+          <div className={cx(isCatalog ? "mt-auto pt-4" : "mt-3")}>
+            <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-[#69738a]">
+              <span>{completed}/{lessons.length} aulas</span>
+              <span>{course.progress}%</span>
+            </div>
+            <div className={cx("overflow-hidden rounded-full bg-[#eef2f8]", isCatalog ? "h-2" : "h-2")}>
+              <div className={cx("h-full rounded-full transition-all", accent.line)} style={{ width: `${course.progress}%` }} />
+            </div>
+          </div>
+
+          <div className={cx("flex flex-wrap gap-2", isCatalog ? "pt-4" : "mt-auto pt-2")}>
+            <Chip label={`${course.modules.length} modulos`} type="secondary" surface="neutral" size="sm" />
+            <Chip label={`${lessons.length} aulas`} type="tertiary" surface="neutral" size="sm" />
+          </div>
+        </div>
+      </Link>
+      <CourseCardActions course={course} onSaveCover={onSaveCover} onDeleteCourse={onDeleteCourse} />
+    </article>
+  );
+}
+
+function InlineCourseCard({
+  draft,
+  onChange,
+  onSubmit,
+  onCancel,
+  saving,
+}: {
+  draft: CourseDraft;
+  onChange: (draft: CourseDraft) => void;
+  onSubmit: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const accent = courseAccent(0);
+  const title = draft.title.trim() || "Novo curso";
+  const coverImageUrl = draft.coverImageUrl.trim();
+
+  return (
+    <article className="relative h-full w-full">
+      <form
+        onSubmit={(event) => void onSubmit(event)}
+        className="group flex h-full min-h-[340px] w-full flex-col overflow-visible rounded-[20px] border border-[#9fb7df] bg-white text-left shadow-[var(--ds-shadow-soft)] ring-2 ring-[#dce8ff]"
+      >
+        <div
+          className={cx(
+            "relative flex h-28 w-full shrink-0 flex-col items-start justify-between rounded-t-[20px] bg-cover bg-center p-3",
+            coverImageUrl ? "text-white" : accent.cover,
+          )}
+          style={coverImageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(10, 15, 25, 0.2), rgba(10, 15, 25, 0.64)), url("${coverImageUrl}")` } : undefined}
+        >
+          <InlineCourseCoverPopover coverImageUrl={draft.coverImageUrl} onChange={(nextCoverImageUrl) => onChange({ ...draft, coverImageUrl: nextCoverImageUrl })} />
+          <div className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] bg-white/78 shadow-[var(--ds-shadow-soft)]">
+            <BookOpen aria-hidden="true" className="h-5 w-5" />
+          </div>
+          <Chip label="Nao iniciado" type="tertiary" surface="neutral" size="sm" showIconLeft iconLeft={<BookOpen aria-hidden="true" />} />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col p-4">
+          <Combobox
+            variant="embedded"
+            className="w-[220px] max-w-full"
+            options={courseCategoryComboboxOptions}
+            value={draft.category}
+            onChange={(value) => onChange({ ...draft, category: value ?? draft.category })}
+            placeholder="Tipo"
+          />
+
+          <label className="mt-3 block">
+            <span className="sr-only">Titulo do novo curso</span>
+            <input
+              aria-label="Titulo do novo curso"
+              value={draft.title}
+              onChange={(event) => onChange({ ...draft, title: event.target.value })}
+              placeholder={title}
+              className="h-9 w-full border-0 bg-transparent px-0 text-[1.08rem] font-semibold leading-6 text-[#141a27] outline-none placeholder:text-[#9da8bb] focus:ring-0"
+              autoFocus
+            />
+          </label>
+
+          <label className="mt-2 block">
+            <span className="sr-only">Descricao do novo curso</span>
+            <textarea
+              aria-label="Descricao do novo curso"
+              value={draft.description}
+              onChange={(event) => onChange({ ...draft, description: event.target.value })}
+              placeholder="Descricao do curso"
+              rows={2}
+              className="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-5 text-[#5f687e] outline-none placeholder:text-[#9da8bb] focus:ring-0"
+            />
+          </label>
+
+          <div className="mt-auto pt-4">
+            <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-[#69738a]">
+              <span>0/0 aulas</span>
+              <span>0%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[#eef2f8]" />
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2 pt-4">
+            <CommonButton type="button" variant="tertiary" className="h-9 px-3 text-sm" onClick={onCancel} disabled={saving}>
+              <X aria-hidden="true" className="h-4 w-4" />
+              Cancelar
+            </CommonButton>
+            <CommonButton type="submit" variant="primary" className="h-9 px-3 text-sm" disabled={saving}>
+              {saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <CheckCircle2 aria-hidden="true" className="h-4 w-4" />}
+              Salvar
+            </CommonButton>
+          </div>
+        </div>
+      </form>
+    </article>
+  );
+}
+
+function InlineCourseCoverPopover({
+  coverImageUrl,
+  onChange,
+}: {
+  coverImageUrl: string;
+  onChange: (coverImageUrl: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const cleanCoverImageUrl = coverImageUrl.trim();
+
+  return (
+    <div className="absolute right-3 top-3 z-20">
+      <IconButton
+        type="button"
+        variant={cleanCoverImageUrl ? "info" : "secondary"}
+        size="sm"
+        aria-label="Editar imagem do novo curso"
+        title="Editar imagem do novo curso"
+        selected={open}
+        onClick={() => setOpen((current) => !current)}
+        className="bg-white/90 shadow-[var(--ds-shadow-soft)] backdrop-blur"
+      >
+        <ImageIcon aria-hidden="true" className="h-4 w-4" />
+      </IconButton>
+
+      {open ? (
+        <div className="absolute right-0 top-11 z-30 w-[min(300px,calc(100vw-3rem))] rounded-[18px] border border-[#d7ddea] bg-white p-3 text-left shadow-[0_18px_40px_rgba(20,28,45,0.18)]">
+          <label className="block text-xs font-medium text-[#5f687e]">
+            Imagem do curso
+            <input
+              aria-label="URL da imagem do novo curso"
+              className="ds-focus mt-1 h-10 w-full rounded-[10px] border border-[#dce3ef] bg-white px-3 text-sm text-[#141a27] outline-none placeholder:text-[#9aa5ba] focus:border-[#b9c6df] focus-visible:ring-2 focus-visible:ring-[#8ea1cc]"
+              value={coverImageUrl}
+              onChange={(event) => onChange(event.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {cleanCoverImageUrl ? (
+              <CommonButton type="button" variant="tertiary" className="h-9 px-3 text-sm" onClick={() => onChange("")}>
+                <X aria-hidden="true" className="h-4 w-4" />
+                Limpar
+              </CommonButton>
+            ) : null}
+            <CommonButton type="button" variant="secondary" className="h-9 px-3 text-sm" onClick={() => setOpen(false)}>
+              Fechar
+            </CommonButton>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CourseCardActions({
+  course,
+  onSaveCover,
+  onDeleteCourse,
+}: {
+  course: StudyCourse;
+  onSaveCover: (course: StudyCourse, coverImageUrl: string) => Promise<void>;
+  onDeleteCourse: (course: StudyCourse) => Promise<void>;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [coverImageUrl, setCoverImageUrl] = useState(course.coverImageUrl);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cleanCoverImageUrl = coverImageUrl.trim();
+  const changed = cleanCoverImageUrl !== course.coverImageUrl;
+
+  useEffect(() => {
+    setCoverImageUrl(course.coverImageUrl);
+    setError(null);
+  }, [course.coverImageUrl]);
+
+  async function submitCover(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!changed || saving) {
+      setCoverOpen(false);
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await onSaveCover(course, cleanCoverImageUrl);
+      setCoverOpen(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel salvar a imagem.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="absolute right-3 top-3 z-20">
+      <IconButton
+        type="button"
+        variant={menuOpen || coverOpen ? "info" : "secondary"}
+        size="sm"
+        aria-label="Acoes do curso"
+        title="Acoes do curso"
+        selected={menuOpen || coverOpen}
+        onClick={() => {
+          setMenuOpen((current) => !current);
+          setCoverOpen(false);
+        }}
+        className="bg-white/90 shadow-[var(--ds-shadow-soft)] backdrop-blur"
+      >
+        <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+      </IconButton>
+
+      {menuOpen ? (
+        <div className="absolute right-0 top-11 z-30 w-[220px] rounded-[16px] border border-[#d7ddea] bg-white p-2 text-left shadow-[0_18px_40px_rgba(20,28,45,0.18)]">
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              setCoverOpen(true);
+            }}
+            className="ds-focus flex h-10 w-full items-center gap-2 rounded-[10px] px-2.5 text-sm font-medium text-[#26324a] transition hover:bg-[#f3f6fc] focus-visible:ring-2 focus-visible:ring-[#8ea1cc]"
+          >
+            <ImageIcon aria-hidden="true" className="h-4 w-4 text-[#4f6fad]" />
+            Foto do curso
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              void onDeleteCourse(course);
+            }}
+            className="ds-focus mt-1 flex h-10 w-full items-center gap-2 rounded-[10px] px-2.5 text-sm font-medium text-[#b8243f] transition hover:bg-[#fff1f4] focus-visible:ring-2 focus-visible:ring-[#d95d72]"
+          >
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+            Excluir curso
+          </button>
+        </div>
+      ) : null}
+
+      {coverOpen ? (
+        <form
+          onSubmit={(event) => void submitCover(event)}
+          className="absolute right-0 top-11 z-30 w-[min(300px,calc(100vw-3rem))] rounded-[18px] border border-[#d7ddea] bg-white p-3 text-left shadow-[0_18px_40px_rgba(20,28,45,0.18)]"
+        >
+          <label className="block text-xs font-medium text-[#5f687e]">
+            Imagem do curso
+            <input
+              aria-label="URL da imagem do curso"
+              className="ds-focus mt-1 h-10 w-full rounded-[10px] border border-[#dce3ef] bg-white px-3 text-sm text-[#141a27] outline-none placeholder:text-[#9aa5ba] focus:border-[#b9c6df] focus-visible:ring-2 focus-visible:ring-[#8ea1cc]"
+              value={coverImageUrl}
+              onChange={(event) => setCoverImageUrl(event.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+
+          {error ? <p className="mt-2 text-xs font-medium text-[#b4233b]">{error}</p> : null}
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {cleanCoverImageUrl ? (
+              <CommonButton type="button" variant="tertiary" className="h-9 px-3 text-sm" disabled={saving} onClick={() => setCoverImageUrl("")}>
+                <X aria-hidden="true" className="h-4 w-4" />
+                Limpar
+              </CommonButton>
+            ) : null}
+            <CommonButton type="button" variant="tertiary" className="h-9 px-3 text-sm" disabled={saving} onClick={() => setCoverOpen(false)}>
+              Fechar
+            </CommonButton>
+            <CommonButton type="submit" variant="secondary" className="h-9 px-3 text-sm" disabled={saving || !changed}>
+              <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              {saving ? "Salvando..." : "Salvar"}
+            </CommonButton>
+          </div>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function CourseProgressCircle({ value }: { value: number }) {
+  const progress = Math.max(0, Math.min(100, value));
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (progress / 100) * circumference;
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 18 18" className="h-4 w-4 -rotate-90">
+      <circle cx="9" cy="9" r={radius} fill="none" stroke="#e5e9f2" strokeWidth="2.5" />
+      <circle
+        cx="9"
+        cy="9"
+        r={radius}
+        fill="none"
+        stroke={progress === 100 ? "#2f8b57" : "#6d63ff"}
+        strokeLinecap="round"
+        strokeWidth="2.5"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+      />
+    </svg>
+  );
+}
+
+function LessonWorkspace({
+  course,
+  topic,
+  modules,
+  draft,
+  onDraftChange,
+  materialDraft,
+  onMaterialDraftChange,
+  onAddMaterial,
+  onDeleteMaterial,
+  onSave,
+  saving,
+  previousTopic,
+  nextTopic,
+  onOpenTopic,
+}: {
+  course: StudyCourse | null;
+  topic: StudyTopic | null;
+  modules: StudyModule[];
+  draft: TopicDraft;
+  onDraftChange: (draft: TopicDraft) => void;
+  materialDraft: MaterialDraft;
+  onMaterialDraftChange: (draft: MaterialDraft) => void;
+  onAddMaterial: () => void;
+  onDeleteMaterial: (material: StudyMaterial) => void;
+  onSave: () => void;
+  saving: boolean;
+  previousTopic: StudyTopic | null;
+  nextTopic: StudyTopic | null;
+  onOpenTopic: (moduleId: string, topic: StudyTopic) => void;
+}) {
+  const lessonModule = topic ? modules.find((currentModule) => currentModule.id === topic.moduleId) ?? null : null;
+  const topicIndex = lessonModule?.topics.findIndex((currentTopic) => currentTopic.id === topic?.id) ?? -1;
+  const statusOption = topicStatusOptions.find((option) => option.value === draft.status);
+  const titleTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = titleTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [draft.title]);
+
+  if (!course) {
+    return (
+      <section className="rounded-[28px] border border-[#dde4ef] bg-white p-6 shadow-[var(--ds-shadow-soft)]">
+        <div className="rounded-[22px] border border-dashed border-[#cbd6e8] bg-[#fafcff] p-8 text-center">
+          <h3 className="text-lg font-semibold text-[#141a27]">Nenhum curso selecionado</h3>
+          <p className="mt-1 text-sm leading-6 text-[#6c7489]">Selecione um curso para abrir as aulas.</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!topic) {
+    return (
+      <section className="rounded-[28px] border border-[#dde4ef] bg-white p-6 shadow-[var(--ds-shadow-soft)]">
+        <div className="rounded-[22px] border border-dashed border-[#cbd6e8] bg-[#fafcff] p-8 text-center">
+          <BookOpen aria-hidden="true" className="mx-auto h-8 w-8 text-[#70809c]" />
+          <h3 className="mt-3 text-lg font-semibold text-[#141a27]">Nenhuma aula cadastrada</h3>
+          <p className="mt-1 text-sm leading-6 text-[#6c7489]">Adicione uma aula no acompanhamento para abrir o conteudo principal.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] sm:p-5">
+      <div className="mb-5 flex flex-col gap-4 border-b border-[#e5ebf4] pb-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={lessonModule ? lessonModule.title : "Modulo"} type="info" surface="neutral" size="sm" />
+            {topicIndex >= 0 ? <Chip label={`Aula ${String(topicIndex + 1).padStart(2, "0")}`} type="secondary" size="sm" /> : null}
+            {statusOption ? <Chip label={statusOption.label} type={statusOption.chip} size="sm" /> : null}
+            {draft.priority ? <Chip label={priorityLabel(draft.priority)} type={priorityChip(draft.priority)} size="sm" /> : null}
+          </div>
+          <label className="sr-only" htmlFor="lesson-title-inline">Titulo da aula</label>
+          <textarea
+            ref={titleTextareaRef}
+            id="lesson-title-inline"
+            value={draft.title}
+            title={draft.title}
+            onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
+            placeholder="Titulo da aula"
+            rows={1}
+            className="ds-focus mt-3 block w-full resize-none overflow-hidden rounded-[10px] border border-transparent bg-transparent px-0 py-1 text-2xl font-semibold leading-tight text-[#121723] outline-none transition placeholder:text-[#9aa5ba] hover:border-[#dce3ef] hover:bg-white hover:px-2 focus:border-[#b9c6df] focus:bg-white focus:px-2 focus-visible:ring-2 focus-visible:ring-[#8ea1cc] sm:text-[2rem]"
+          />
+          <p className="mt-2 text-sm leading-6 text-[#6c7489]" title={course.title}>{course.title}</p>
+        </div>
+
+        <Toolbar variant="ghost" className="shrink-0 justify-start lg:justify-end">
+          <ToolbarItem>
             <IconButton
               type="button"
               variant="secondary"
-              size="xs"
-              aria-label="Editar curso"
-              title="Editar curso"
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit();
+              size="md"
+              aria-label="Aula anterior"
+              title="Aula anterior"
+              disabled={!previousTopic}
+              onClick={() => {
+                if (previousTopic) onOpenTopic(previousTopic.moduleId, previousTopic);
               }}
             >
-              <MoreHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
+              <ChevronLeft aria-hidden="true" className="h-4 w-4" />
             </IconButton>
+          </ToolbarItem>
+          <ToolbarItem>
             <IconButton
               type="button"
-              variant="destructive"
-              size="xs"
-              aria-label="Excluir curso"
-              title="Excluir curso"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete();
+              variant="secondary"
+              size="md"
+              aria-label="Proxima aula"
+              title="Proxima aula"
+              disabled={!nextTopic}
+              onClick={() => {
+                if (nextTopic) onOpenTopic(nextTopic.moduleId, nextTopic);
               }}
             >
-              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+              <ChevronRight aria-hidden="true" className="h-4 w-4" />
             </IconButton>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="mb-2 flex items-center justify-between text-xs font-medium text-[#69738a]">
-            <span>{completed}/{lessons.length} aulas</span>
-            <span>{course.progress}%</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-[#eef2f8]">
-            <div className={cx("h-full rounded-full transition-all", accent.line)} style={{ width: `${course.progress}%` }} />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {course.priority ? <Chip label={priorityLabel(course.priority)} type={priorityChip(course.priority)} size="sm" /> : null}
-          <Chip label={`${course.modules.length} modulos`} type={accent.chip} surface="neutral" size="sm" />
-          <Chip label={`${lessons.length} aulas`} type="tertiary" surface="neutral" size="sm" />
-          <CommonButton
-            type="button"
-            variant="tertiary"
-            className="ml-auto h-8 px-2 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              onCreateModule();
-            }}
-          >
-            <Plus aria-hidden="true" className="h-3.5 w-3.5" />
-            Novo modulo
-          </CommonButton>
-        </div>
-
-        {inlineModuleDraft ? (
-          <form
-            className="mt-4 space-y-3 rounded-[18px] border border-[#dbe4f2] bg-[#fbfcff] p-3"
-            onSubmit={(event) => {
-              event.stopPropagation();
-              onInlineModuleSubmit(event);
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <TextField
-              label="Titulo do modulo"
-              value={inlineModuleDraft.title}
-              onChange={(title) => onInlineModuleChange({ ...inlineModuleDraft, title })}
-              placeholder="Ex.: Fundamentos"
-            />
-            <TextareaField
-              label="Descricao curta"
-              value={inlineModuleDraft.description}
-              onChange={(description) => onInlineModuleChange({ ...inlineModuleDraft, description })}
-              placeholder="Resumo opcional"
-              rows={2}
-            />
-            <PrioritySelect value={inlineModuleDraft.priority} onChange={(priority) => onInlineModuleChange({ ...inlineModuleDraft, priority })} compact />
-            <div className="flex justify-end gap-2">
-              <CommonButton type="button" variant="tertiary" className="h-8 px-2 text-xs" onClick={onInlineModuleCancel} disabled={saving}>
-                Cancelar
-              </CommonButton>
-              <CommonButton type="submit" variant="primary" className="h-8 px-3 text-xs" disabled={saving}>
-                {saving ? "Salvando..." : "Salvar modulo"}
-              </CommonButton>
-            </div>
-          </form>
-        ) : null}
+          </ToolbarItem>
+          <ToolbarItem>
+            <CommonButton type="button" variant="primary" className="h-10 shrink-0 px-4" onClick={onSave} disabled={saving}>
+              {saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <CheckCircle2 aria-hidden="true" className="h-4 w-4" />}
+              Salvar aula
+            </CommonButton>
+          </ToolbarItem>
+        </Toolbar>
       </div>
-    </article>
+
+      <TopicForm
+        modules={modules}
+        draft={draft}
+        onChange={onDraftChange}
+        selectedTopic={topic}
+        materialDraft={materialDraft}
+        onMaterialDraftChange={onMaterialDraftChange}
+        onAddMaterial={onAddMaterial}
+        onDeleteMaterial={onDeleteMaterial}
+        saving={saving}
+        showTitleField={false}
+        showMetadataFields={false}
+        showMaterials={false}
+      />
+    </section>
   );
 }
 
@@ -1549,9 +2190,9 @@ function ModuleDetailPanel({
   draggedModuleId,
   draggedTopic,
   dropTargetId,
-  onEditCourse,
+  selectedTopicId,
+  panelMode = "full",
   onCreateCourse,
-  onEditModule,
   onDeleteModule,
   onCreateModule,
   inlineModuleDraft,
@@ -1581,9 +2222,9 @@ function ModuleDetailPanel({
   draggedModuleId: string | null;
   draggedTopic: { moduleId: string; topicId: string } | null;
   dropTargetId: string | null;
-  onEditCourse: (course: StudyCourse) => void;
+  selectedTopicId?: string | null;
+  panelMode?: "full" | "sidebar";
   onCreateCourse: () => void;
-  onEditModule: (module: StudyModule) => void;
   onDeleteModule: (module: StudyModule) => void;
   onCreateModule: (courseId: string) => void;
   inlineModuleDraft: InlineModuleDraft | null;
@@ -1608,6 +2249,21 @@ function ModuleDetailPanel({
   onTopicDrop: (moduleId: string, targetId: string | null) => void;
   onTopicDragEnd: () => void;
 }) {
+  const [collapsedModuleIds, setCollapsedModuleIds] = useState<Set<string>>(() => new Set());
+  const [isEditing, setIsEditing] = useState(false);
+
+  function toggleModule(moduleId: string) {
+    setCollapsedModuleIds((current) => {
+      const next = new Set(current);
+      if (next.has(moduleId)) {
+        next.delete(moduleId);
+      } else {
+        next.add(moduleId);
+      }
+      return next;
+    });
+  }
+
   if (!course) {
     return (
       <section className="rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)]">
@@ -1615,90 +2271,135 @@ function ModuleDetailPanel({
       </section>
     );
   }
-  const lessons = course.modules.flatMap((module) => module.topics);
+  const allModulesExpanded = course.modules.every((module) => !collapsedModuleIds.has(module.id));
+
+  function exitEditMode() {
+    setIsEditing(false);
+    onInlineModuleCancel();
+    onInlineLessonCancel();
+  }
 
   return (
-    <section className="rounded-[28px] border border-[#dde4ef] bg-white shadow-[var(--ds-shadow-soft)]">
-      <div className="border-b border-[#e5ebf4] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Chip label="Curso ativo" type="info" surface="neutral" size="sm" showIconLeft iconLeft={<PlayCircle aria-hidden="true" />} />
-              <Chip label={`${course.progress}%`} type={course.progress === 100 ? "success" : "secondary"} size="sm" />
-              {course.priority ? <Chip label={priorityLabel(course.priority)} type={priorityChip(course.priority)} size="sm" /> : null}
-            </div>
-            <h3 className="mt-3 text-[1.45rem] font-semibold leading-tight text-[#141a27]">{course.title}</h3>
-            {course.description ? <p className="mt-2 max-w-[760px] text-sm leading-6 text-[#6c7489]">{course.description}</p> : null}
+    <section
+      className={cx(
+        "rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] sm:p-5",
+        panelMode === "sidebar" && "overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto",
+      )}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={() => onModuleDrop(null)}
+    >
+        <div
+          className={cx(
+            panelMode === "sidebar"
+              ? "mb-4 flex items-start justify-between gap-3"
+              : "mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between",
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <h4 className="font-semibold text-[#151b29]">
+              {panelMode === "sidebar" ? "Acompanhamento" : "Modulos e aulas"}
+            </h4>
+            <p className="text-sm text-[#6c7489]">
+              {panelMode === "sidebar" ? "Progresso por modulo e aula." : "Estrutura do curso em ordem."}
+            </p>
           </div>
-
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <CommonButton type="button" variant="secondary" className="h-10 px-3" onClick={() => onEditCourse(course)}>
-              Editar
-            </CommonButton>
-            <CommonButton type="button" variant="primary" className="h-10 px-3" onClick={() => onCreateModule(course.id)}>
-              <Plus aria-hidden="true" className="h-4 w-4" />
-              Novo modulo
-            </CommonButton>
-          </div>
+          <Toolbar variant="ghost" className={cx("max-w-full shrink-0 flex-wrap justify-end", panelMode === "full" && "lg:justify-end")}>
+            <ToolbarItem>
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2 text-sm font-medium text-[#46536a]">
+                {course.progress}%
+                <CourseProgressCircle value={course.progress} />
+              </span>
+            </ToolbarItem>
+            <ToolbarItem>
+              <IconButton
+                type="button"
+                variant="secondary"
+                size="md"
+                disabled={course.modules.length === 0}
+                aria-label={allModulesExpanded ? "Colapsar tudo" : "Expandir tudo"}
+                title={allModulesExpanded ? "Colapsar tudo" : "Expandir tudo"}
+                onClick={() => {
+                  if (allModulesExpanded) {
+                    setCollapsedModuleIds(new Set(course.modules.map((module) => module.id)));
+                  } else {
+                    setCollapsedModuleIds(new Set());
+                  }
+                }}
+              >
+                {allModulesExpanded ? (
+                  <ChevronsDownUp aria-hidden="true" className="h-4 w-4" />
+                ) : (
+                  <ChevronsUpDown aria-hidden="true" className="h-4 w-4" />
+                )}
+              </IconButton>
+            </ToolbarItem>
+            <ToolbarItem>
+              {isEditing ? (
+                panelMode === "sidebar" ? (
+                  <div className="flex items-center gap-1.5">
+                    <IconButton
+                      type="button"
+                      variant="secondary"
+                      size="md"
+                      aria-label="Cancelar edicao"
+                      title="Cancelar edicao"
+                      onClick={exitEditMode}
+                      disabled={saving}
+                    >
+                      <X aria-hidden="true" className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton
+                      type="button"
+                      variant="primary"
+                      size="md"
+                      aria-label="Salvar alteracoes"
+                      title="Salvar alteracoes"
+                      onClick={exitEditMode}
+                      disabled={saving}
+                    >
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                    </IconButton>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <CommonButton type="button" variant="secondary" className="h-9 px-3" onClick={exitEditMode} disabled={saving}>
+                      Cancelar
+                    </CommonButton>
+                    <CommonButton type="button" variant="primary" className="h-9 px-3" onClick={exitEditMode} disabled={saving}>
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                      Salvar alteracoes
+                    </CommonButton>
+                  </div>
+                )
+              ) : (
+                <IconButton
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  aria-label="Editar modulos e aulas"
+                  title="Editar modulos e aulas"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Pencil aria-hidden="true" className="h-4 w-4" />
+                </IconButton>
+              )}
+            </ToolbarItem>
+          </Toolbar>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <ModuleMiniStat label="Modulos" value={course.modules.length.toString()} />
-          <ModuleMiniStat label="Aulas" value={lessons.length.toString()} />
-          <ModuleMiniStat label="Concluidas" value={lessons.filter((topic) => topic.status === "done").length.toString()} />
-        </div>
-      </div>
+        <div className="divide-y divide-[#e3e9f2] border-y border-[#e3e9f2]">
+          {course.modules.map((module, moduleIndex) => {
+            const completedTopics = module.topics.filter((topic) => topic.status === "done").length;
+            const isExpanded = !collapsedModuleIds.has(module.id);
 
-      <div
-        className="p-4 sm:p-5"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={() => onModuleDrop(null)}
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h4 className="font-semibold text-[#151b29]">Modulos e aulas</h4>
-            <p className="text-sm text-[#6c7489]">Estrutura do curso em ordem.</p>
-          </div>
-        </div>
-
-        {inlineModuleDraft ? (
-          <form className="mb-4 rounded-[20px] border border-[#dbe4f2] bg-[#fbfcff] p-3" onSubmit={onInlineModuleSubmit}>
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px]">
-              <TextField
-                label="Novo modulo"
-                value={inlineModuleDraft.title}
-                onChange={(title) => onInlineModuleChange({ ...inlineModuleDraft, title })}
-                placeholder="Titulo do modulo"
-              />
-              <TextField
-                label="Descricao"
-                value={inlineModuleDraft.description}
-                onChange={(description) => onInlineModuleChange({ ...inlineModuleDraft, description })}
-                placeholder="Descricao opcional"
-              />
-              <PrioritySelect value={inlineModuleDraft.priority} onChange={(priority) => onInlineModuleChange({ ...inlineModuleDraft, priority })} compact />
-            </div>
-            <div className="mt-3 flex justify-end gap-2">
-              <CommonButton type="button" variant="tertiary" className="h-9 px-3" onClick={onInlineModuleCancel} disabled={saving}>
-                Cancelar
-              </CommonButton>
-              <CommonButton type="submit" variant="primary" className="h-9 px-3" disabled={saving}>
-                {saving ? "Salvando..." : "Salvar modulo"}
-              </CommonButton>
-            </div>
-          </form>
-        ) : null}
-
-        {course.modules.length ? (
-          <div className="space-y-4">
-            {course.modules.map((module, moduleIndex) => (
+            return (
               <section
                 key={module.id}
                 draggable
                 className={cx(
-                  "rounded-[22px] border border-[#dfe6f2] bg-[#fbfcff] p-3 transition-all duration-200",
-                  draggedModuleId === module.id && "cursor-grabbing opacity-45 shadow-[0_18px_36px_rgba(24,35,55,0.16)]",
-                  dropTargetId === module.id && "border-[#8fb8ff] ring-2 ring-[#cfe0ff]",
+                  "transition-all duration-200",
+                  draggedModuleId === module.id && "cursor-grabbing opacity-45",
+                  dropTargetId === module.id && "bg-[#f6f9ff] ring-2 ring-[#cfe0ff]",
                 )}
                 onDragStart={(event) => {
                   event.stopPropagation();
@@ -1715,58 +2416,93 @@ function ModuleDetailPanel({
                 }}
                 onDragEnd={onModuleDragEnd}
               >
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium uppercase text-[#7a8498]">Modulo {moduleIndex + 1}</p>
-                    <h5 className="text-sm font-semibold text-[#172033]">{module.title}</h5>
-                    {module.description ? <p className="mt-1 text-xs text-[#6c7489]">{module.description}</p> : null}
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <CommonButton type="button" variant="tertiary" className="h-8 px-2 text-xs" onClick={() => onEditModule(module)}>
-                      Editar
-                    </CommonButton>
-                    <IconButton type="button" variant="destructive" size="sm" aria-label="Excluir modulo" title="Excluir modulo" onClick={() => onDeleteModule(module)}>
-                      <Trash2 aria-hidden="true" className="h-4 w-4" />
-                    </IconButton>
-                    <CommonButton type="button" variant="secondary" className="h-8 px-2 text-xs" onClick={() => onCreateTopic(module.id)}>
-                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
-                      Nova aula
-                    </CommonButton>
+                <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => toggleModule(module.id)}
+                    className="group flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9db2e2] focus-visible:ring-offset-2"
+                    aria-expanded={isExpanded}
+                  >
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-[#66728a] transition group-hover:text-[#1f2738]">
+                      <ChevronDown
+                        aria-hidden="true"
+                        className={cx("h-4 w-4 transition-transform", !isExpanded && "-rotate-90")}
+                      />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="text-xs font-medium uppercase text-[#7a8498]">Modulo {moduleIndex + 1}</span>
+                      <span className="mt-0.5 block truncate text-sm font-semibold text-[#172033]">{module.title}</span>
+                      {module.description ? <span className="mt-1 block truncate text-xs text-[#6c7489]">{module.description}</span> : null}
+                    </span>
+                  </button>
+
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-[#5f6b82]">
+                      {completedTopics} / {module.topics.length}
+                    </span>
+                    {isEditing ? (
+                      <>
+                        <IconButton
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          aria-label="Adicionar aula"
+                          title="Adicionar aula"
+                          onClick={() => {
+                            setCollapsedModuleIds((current) => {
+                              const next = new Set(current);
+                              next.delete(module.id);
+                              return next;
+                            });
+                            onCreateTopic(module.id);
+                          }}
+                          disabled={inlineLessonModuleId === module.id}
+                        >
+                          <Plus aria-hidden="true" className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton type="button" variant="destructive" size="sm" aria-label="Excluir modulo" title="Excluir modulo" onClick={() => onDeleteModule(module)}>
+                          <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        </IconButton>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
-                {inlineLessonModuleId === module.id ? (
-                  <form className="mb-3 rounded-[18px] border border-[#dbe4f2] bg-white p-3" onSubmit={onInlineLessonSubmit}>
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_150px_150px]">
-                      <TextField
-                        label="Nova aula"
-                        value={inlineLessonDraft.title}
-                        onChange={(title) => onInlineLessonChange({ ...inlineLessonDraft, title })}
-                        placeholder="Titulo da aula"
-                      />
-                      <SelectField label="Status" value={inlineLessonDraft.status} onChange={(status) => onInlineLessonChange({ ...inlineLessonDraft, status: status as StudyTopicStatus })}>
-                        {topicStatusOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <PrioritySelect value={inlineLessonDraft.priority} onChange={(priority) => onInlineLessonChange({ ...inlineLessonDraft, priority })} compact />
-                      <TextField label="Prazo" type="date" value={inlineLessonDraft.dueAt} onChange={(dueAt) => onInlineLessonChange({ ...inlineLessonDraft, dueAt })} />
-                    </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <CommonButton type="button" variant="tertiary" className="h-8 px-2 text-xs" onClick={onInlineLessonCancel} disabled={saving}>
-                        Cancelar
-                      </CommonButton>
-                      <CommonButton type="submit" variant="primary" className="h-8 px-3 text-xs" disabled={saving}>
-                        {saving ? "Salvando..." : "Salvar aula"}
-                      </CommonButton>
+                {isEditing && isExpanded && inlineLessonModuleId === module.id ? (
+                  <form className="pb-4 pl-0 sm:pl-12" onSubmit={onInlineLessonSubmit}>
+                    <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <IconButton type="button" variant="info" size="sm" className="shrink-0 rounded-full border border-[#cbd6e8] bg-white shadow-none" disabled>
+                          <Play aria-hidden="true" className="h-4 w-4" />
+                        </IconButton>
+                        <span className="flex min-h-8 min-w-0 flex-1 items-center gap-2">
+                          <span className="shrink-0 text-sm font-semibold text-[#62708a]">
+                            {String(module.topics.length + 1).padStart(2, "0")}
+                          </span>
+                          <input
+                            autoFocus
+                            className="ds-focus min-w-0 flex-1 rounded-[8px] border border-transparent bg-transparent px-0 py-1 text-sm font-semibold text-[#172033] placeholder:text-[#9aa5ba] hover:border-[#dce3ef] hover:bg-white hover:px-2 focus:border-[#b9c6df] focus:bg-white focus:px-2 focus-visible:ring-2 focus-visible:ring-[#8ea1cc]"
+                            value={inlineLessonDraft.title}
+                            onChange={(event) => onInlineLessonChange({ ...inlineLessonDraft, title: event.target.value })}
+                            placeholder="Titulo da aula"
+                          />
+                        </span>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        <IconButton type="submit" variant="success" size="sm" aria-label="Salvar aula" title="Salvar aula" disabled={saving}>
+                          <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton type="button" variant="destructive" size="sm" aria-label="Cancelar aula" title="Cancelar aula" onClick={onInlineLessonCancel} disabled={saving}>
+                          <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        </IconButton>
+                      </div>
                     </div>
                   </form>
                 ) : null}
 
-                {module.topics.length ? (
-                  <div className="space-y-2">
+                {isExpanded && module.topics.length ? (
+                  <div className="divide-y divide-[#edf1f7] pb-4 pl-0 sm:pl-12">
                     {module.topics.map((topic, index) => (
                       <LessonRow
                         key={topic.id}
@@ -1775,8 +2511,9 @@ function ModuleDetailPanel({
                         saving={saving}
                         grabbed={draggedTopic?.topicId === topic.id}
                         dropTarget={dropTargetId === topic.id}
+                        selected={selectedTopicId === topic.id}
                         onOpen={() => onOpenTopic(module.id, topic)}
-                        onDelete={() => onDeleteTopic(topic)}
+                        onDelete={isEditing ? () => onDeleteTopic(topic) : undefined}
                         onSetStatus={(status) => onSetTopicStatus(topic, status)}
                         onDragStart={() => onTopicDragStart(module.id, topic.id)}
                         onDragOver={(event) => onTopicDragOver(event, topic.id)}
@@ -1788,28 +2525,60 @@ function ModuleDetailPanel({
                       />
                     ))}
                   </div>
-                ) : (
-                  <div className="rounded-[16px] border border-dashed border-[#ccd7ea] bg-white p-4 text-sm text-[#69738a]">
+                ) : isExpanded ? (
+                  <div className="pb-4 pl-0 text-sm text-[#69738a] sm:pl-12">
                     Este modulo ainda nao tem aulas.
                   </div>
-                )}
+                ) : null}
               </section>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="Curso sem modulos" description="Adicione o primeiro modulo para estruturar as aulas deste curso." actionLabel="Criar modulo" onAction={() => onCreateModule(course.id)} />
-        )}
-      </div>
-    </section>
-  );
-}
+            );
+          })}
 
-function ModuleMiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[18px] border border-[#e0e6f0] bg-[#fbfcff] p-3">
-      <p className="text-[11px] font-medium uppercase text-[#7a8498]">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-[#151b29]">{value}</p>
-    </div>
+          {isEditing && inlineModuleDraft ? (
+            <form className="transition-all duration-200" onSubmit={onInlineModuleSubmit}>
+              <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-[#66728a]">
+                    <ChevronDown aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-xs font-medium uppercase text-[#7a8498]">Modulo {course.modules.length + 1}</span>
+                    <input
+                      autoFocus
+                      className="ds-focus mt-0.5 block w-full rounded-[8px] border border-transparent bg-transparent px-0 py-1 text-sm font-semibold text-[#172033] placeholder:text-[#9aa5ba] hover:border-[#dce3ef] hover:bg-white hover:px-2 focus:border-[#b9c6df] focus:bg-white focus:px-2 focus-visible:ring-2 focus-visible:ring-[#8ea1cc]"
+                      value={inlineModuleDraft.title}
+                      onChange={(event) => onInlineModuleChange({ ...inlineModuleDraft, title: event.target.value })}
+                      placeholder="Titulo do modulo"
+                    />
+                  </span>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-[#5f6b82]">0 / 0</span>
+                  <IconButton type="submit" variant="success" size="sm" aria-label="Salvar modulo" title="Salvar modulo" disabled={saving}>
+                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton type="button" variant="destructive" size="sm" aria-label="Cancelar modulo" title="Cancelar modulo" onClick={onInlineModuleCancel} disabled={saving}>
+                    <Trash2 aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                </div>
+              </div>
+            </form>
+          ) : null}
+        </div>
+
+        {isEditing ? (
+          <button
+            type="button"
+            onClick={() => onCreateModule(course.id)}
+            disabled={Boolean(inlineModuleDraft)}
+            className="ds-focus mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-[18px] border border-dashed border-[#cbd6e8] bg-transparent px-4 text-sm font-medium text-[#4d5872] transition hover:border-[#9fb0d0] hover:bg-[#f8faff] hover:text-[#1c2538] focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            Adicionar modulo
+          </button>
+        ) : null}
+    </section>
   );
 }
 
@@ -1819,6 +2588,7 @@ function LessonRow({
   saving,
   grabbed,
   dropTarget,
+  selected,
   onOpen,
   onDelete,
   onSetStatus,
@@ -1832,15 +2602,16 @@ function LessonRow({
   saving: boolean;
   grabbed: boolean;
   dropTarget: boolean;
+  selected?: boolean;
   onOpen: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   onSetStatus: (status: StudyTopicStatus) => void;
   onDragStart: () => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
 }) {
-  const nextStatus: StudyTopicStatus = topic.status === "done" ? "in_progress" : "done";
+  const done = topic.status === "done";
 
   return (
     <article
@@ -1853,45 +2624,57 @@ function LessonRow({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       className={cx(
-        "group rounded-[20px] border bg-[#fbfcff] p-3 transition-all duration-200 hover:border-[#c6d2e5] hover:bg-white",
+        "group -mx-3 rounded-[16px] px-3 py-3 transition-all duration-200",
+        selected && "bg-[#f2f4f7]",
         grabbed && "cursor-grabbing opacity-45",
-        dropTarget && "border-[#8fb8ff] ring-2 ring-[#cfe0ff]",
+        dropTarget && "rounded-[14px] ring-2 ring-[#cfe0ff]",
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9db2e2]">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-white text-sm font-semibold text-[#62708a] shadow-[var(--ds-shadow-soft)]">
-            {String(index + 1).padStart(2, "0")}
-          </span>
-          <span className="min-w-0">
-            <span className={cx("block text-sm font-semibold text-[#172033]", topic.status === "done" && "text-[#7e8798] line-through")}>
-              {topic.title}
-            </span>
-            <span className="mt-1 flex flex-wrap gap-2">
-              <Chip label={topicStatusLabel(topic.status)} type={topicStatusChip(topic.status)} size="sm" />
-              <Chip label={formatDate(topic.dueAt)} type="info" surface="neutral" size="sm" showIconLeft iconLeft={<CalendarClock aria-hidden="true" />} />
-              {topic.priority ? <Chip label={priorityLabel(topic.priority)} type={priorityChip(topic.priority)} size="sm" /> : null}
-              {topic.materials.length ? <Chip label="Materiais" counter={topic.materials.length} showCounter type="secondary" size="sm" /> : null}
-            </span>
-          </span>
-        </button>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {topic.status === "not_started" ? (
-            <CommonButton type="button" variant="secondary" usage="info" className="h-9 px-3" disabled={saving} onClick={() => onSetStatus("in_progress")}>
-              <PlayCircle aria-hidden="true" className="h-4 w-4" />
-              Iniciar
-            </CommonButton>
-          ) : (
-            <CommonButton type="button" variant="secondary" usage={topic.status === "done" ? "general" : "success"} className="h-9 px-3" disabled={saving} onClick={() => onSetStatus(nextStatus)}>
-              {saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <CheckCircle2 aria-hidden="true" className="h-4 w-4" />}
-              {topic.status === "done" ? "Reabrir" : "Concluir"}
-            </CommonButton>
-          )}
-          <IconButton type="button" variant="destructive" size="sm" aria-label="Excluir aula" title="Excluir aula" onClick={onDelete}>
-            <Trash2 aria-hidden="true" className="h-4 w-4" />
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <IconButton
+            type="button"
+            variant="info"
+            size="sm"
+            onClick={() => onSetStatus(done ? "in_progress" : "done")}
+            disabled={saving}
+            className="shrink-0 rounded-full border border-[#cbd6e8] bg-white text-[#3555d2] shadow-none"
+            aria-label={done ? "Marcar aula como nao assistida" : "Marcar aula como assistida"}
+            title={done ? "Marcar como nao assistida" : "Marcar como assistida"}
+          >
+            {done ? <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> : <Play aria-hidden="true" className="h-4 w-4" />}
           </IconButton>
+
+          <button
+            type="button"
+            onClick={onOpen}
+            className="flex min-w-0 flex-1 flex-col items-start gap-1 rounded-[10px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9db2e2]"
+            aria-current={selected ? "page" : undefined}
+          >
+            <span className="flex min-h-8 min-w-0 max-w-full items-center gap-2 self-stretch">
+              <span className="shrink-0 text-sm font-semibold text-[#62708a]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className={cx("block min-w-0 flex-1 truncate text-sm font-semibold text-[#172033]", done && "text-[#7e8798] line-through")} title={topic.title}>
+                {topic.title}
+              </span>
+            </span>
+            {topic.priority || topic.materials.length ? (
+              <span className="ml-8 flex max-w-full flex-wrap gap-2">
+                {topic.priority ? <Chip label={priorityLabel(topic.priority)} type={priorityChip(topic.priority)} size="sm" /> : null}
+                {topic.materials.length ? <Chip label="Materiais" counter={topic.materials.length} showCounter type="secondary" size="sm" /> : null}
+              </span>
+            ) : null}
+          </button>
         </div>
+
+        {onDelete ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <IconButton type="button" variant="destructive" size="sm" aria-label="Excluir aula" title="Excluir aula" onClick={onDelete}>
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+            </IconButton>
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -1984,6 +2767,58 @@ function StudyQueuePanel({
   );
 }
 
+function PendingTabPanel({
+  pendingItems,
+  onOpenPending,
+  onCreatePending,
+}: {
+  pendingItems: StudyPendingItem[];
+  onOpenPending: (item: StudyPendingItem) => void;
+  onCreatePending: () => void;
+}) {
+  return (
+    <section className="rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-[#151b29]">Pendencias</h3>
+          <p className="text-sm text-[#6c7489]">
+            {pendingItems.length} {pendingItems.length === 1 ? "item aberto ou concluido" : "itens abertos ou concluidos"}
+          </p>
+        </div>
+        <CommonButton type="button" variant="primary" className="h-10 px-3" onClick={onCreatePending}>
+          <Plus aria-hidden="true" className="h-4 w-4" />
+          Pendencia
+        </CommonButton>
+      </div>
+
+      {pendingItems.length ? (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {pendingItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenPending(item)}
+              className="rounded-[20px] border border-[#dfe6f2] bg-[#fbfcff] p-4 text-left transition hover:border-[#b8c7e5] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9db2e2]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 text-sm font-semibold text-[#172033]">{item.title}</p>
+                <Chip label={pendingStatusLabel(item.status)} type={pendingStatusChip(item.status)} size="sm" />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Chip label={formatDate(item.dueAt)} type="info" surface="neutral" size="sm" showIconLeft iconLeft={<CalendarClock aria-hidden="true" />} />
+                {item.priority ? <Chip label={priorityLabel(item.priority)} type={priorityChip(item.priority)} size="sm" /> : null}
+                {item.syncToTasks ? <Chip label="Tasks" type="secondary" size="sm" /> : null}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Nenhuma pendencia" description="Crie pendencias para revisoes, prazos e proximas acoes de estudo." actionLabel="Criar pendencia" onAction={onCreatePending} />
+      )}
+    </section>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -2029,33 +2864,17 @@ function CourseForm({ draft, onChange }: { draft: CourseDraft; onChange: (draft:
   return (
     <div className="space-y-4">
       <TextField label="Titulo" value={draft.title} onChange={(title) => onChange({ ...draft, title })} placeholder="Ex.: Front-end do zero ao portfolio" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SelectField label="Categoria" value={draft.category} onChange={(category) => onChange({ ...draft, category })}>
+          {courseCategoryOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </SelectField>
+        <TextField label="URL da capa" value={draft.coverImageUrl} onChange={(coverImageUrl) => onChange({ ...draft, coverImageUrl })} placeholder="https://..." />
+      </div>
       <TextareaField label="Descricao curta" value={draft.description} onChange={(description) => onChange({ ...draft, description })} placeholder="Resumo do objetivo do curso" />
-      <PrioritySelect value={draft.priority} onChange={(priority) => onChange({ ...draft, priority })} />
-    </div>
-  );
-}
-
-function ModuleForm({
-  courses,
-  draft,
-  onChange,
-}: {
-  courses: StudyCourse[];
-  draft: ModuleDraft;
-  onChange: (draft: ModuleDraft) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <SelectField label="Curso" value={draft.courseId} onChange={(courseId) => onChange({ ...draft, courseId })}>
-        <option value="">Selecione um curso</option>
-        {courses.map((course) => (
-          <option key={course.id} value={course.id}>
-            {course.title}
-          </option>
-        ))}
-      </SelectField>
-      <TextField label="Titulo" value={draft.title} onChange={(title) => onChange({ ...draft, title })} placeholder="Ex.: Fundamentos de React" />
-      <TextareaField label="Descricao curta" value={draft.description} onChange={(description) => onChange({ ...draft, description })} placeholder="Resumo do objetivo do modulo" />
       <PrioritySelect value={draft.priority} onChange={(priority) => onChange({ ...draft, priority })} />
     </div>
   );
@@ -2071,6 +2890,9 @@ function TopicForm({
   onAddMaterial,
   onDeleteMaterial,
   saving,
+  showTitleField = true,
+  showMetadataFields = true,
+  showMaterials = true,
 }: {
   modules: StudyModule[];
   draft: TopicDraft;
@@ -2081,40 +2903,56 @@ function TopicForm({
   onAddMaterial: () => void;
   onDeleteMaterial: (material: StudyMaterial) => void;
   saving: boolean;
+  showTitleField?: boolean;
+  showMetadataFields?: boolean;
+  showMaterials?: boolean;
 }) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
+    <div className={cx("grid gap-5", showMaterials && "lg:grid-cols-[minmax(0,1fr)_330px]")}>
       <div className="space-y-4">
-        <TextField label="Titulo" value={draft.title} onChange={(title) => onChange({ ...draft, title })} placeholder="Ex.: Hooks e estado local" />
-        <div className="grid gap-3 md:grid-cols-4">
-          <SelectField label="Modulo" value={draft.moduleId} onChange={(moduleId) => onChange({ ...draft, moduleId })}>
-            {modules.map((module) => (
-              <option key={module.id} value={module.id}>
-                {module.title}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Status" value={draft.status} onChange={(status) => onChange({ ...draft, status: status as StudyTopicStatus })}>
-            {topicStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </SelectField>
-          <PrioritySelect value={draft.priority} onChange={(priority) => onChange({ ...draft, priority })} compact />
-          <TextField label="Prazo" type="date" value={draft.dueAt} onChange={(dueAt) => onChange({ ...draft, dueAt })} />
-        </div>
+        {showTitleField ? (
+          <TextField label="Titulo" value={draft.title} onChange={(title) => onChange({ ...draft, title })} placeholder="Ex.: Hooks e estado local" />
+        ) : null}
+        {showMetadataFields ? (
+          <div className="grid gap-3 md:grid-cols-4">
+            <SelectField label="Modulo" value={draft.moduleId} onChange={(moduleId) => onChange({ ...draft, moduleId })}>
+              {modules.map((module) => (
+                <option key={module.id} value={module.id}>
+                  {module.title}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField label="Status" value={draft.status} onChange={(status) => onChange({ ...draft, status: status as StudyTopicStatus })}>
+              {topicStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </SelectField>
+            <PrioritySelect value={draft.priority} onChange={(priority) => onChange({ ...draft, priority })} compact />
+            <TextField label="Prazo" type="date" value={draft.dueAt} onChange={(dueAt) => onChange({ ...draft, dueAt })} />
+          </div>
+        ) : null}
 
         <section>
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-sm font-semibold text-[#172033]">Anotacoes</h4>
-            <span className="text-xs text-[#7a8498]">Use / para inserir blocos</span>
+            {showTitleField || showMaterials ? <span className="text-xs text-[#7a8498]">Use / para inserir blocos</span> : null}
           </div>
-          <RichTextEditor value={draft.notes} onChange={(notes) => onChange({ ...draft, notes })} className="rounded-[18px] border border-[#dfe6f2] bg-[#fbfcff] p-4" />
+          {showTitleField || showMaterials ? (
+            <RichTextEditor
+              value={toEditorBlocks(draft.notes)}
+              onChange={(notes) => onChange({ ...draft, notes: fromEditorBlocks(notes) })}
+              className="rounded-[18px] border border-[#dfe6f2] bg-[#fbfcff] p-4"
+            />
+          ) : (
+            <LessonAnnotationsBoard value={draft.notes} onChange={(notes) => onChange({ ...draft, notes })} />
+          )}
         </section>
       </div>
 
-      <aside className="space-y-4">
+      {showMaterials ? (
+        <aside className="space-y-4">
         <section className="rounded-[20px] border border-[#dfe6f2] bg-[#fbfcff] p-4">
           <h4 className="font-semibold text-[#172033]">Materiais complementares</h4>
           <div className="mt-3 space-y-2">
@@ -2169,7 +3007,8 @@ function TopicForm({
             </div>
           </section>
         ) : null}
-      </aside>
+        </aside>
+      ) : null}
     </div>
   );
 }

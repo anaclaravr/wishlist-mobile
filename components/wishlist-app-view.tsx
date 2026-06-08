@@ -2438,7 +2438,9 @@ export function WishlistAppView({
           avatarUrl={data.wishlist.ownerAvatarUrl}
           wishlistHref={canonicalPath}
           tasksHref="/tasks"
-          showTasks={access.role === "admin"}
+          studiesHref="/studies"
+          showTasks={can("admin.tasks.manage")}
+          showStudies={can("admin.studies.manage")}
           adminHref="/admin"
           onLogout={logout}
           activePage="wishlist"

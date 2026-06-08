@@ -259,12 +259,20 @@ await sql`
     wishlist_id uuid not null references wishlists(id) on delete cascade,
     title text not null,
     description text not null default '',
+    category text not null default 'course',
+    cover_image_url text not null default '',
     priority text,
     sort_order double precision not null default 0,
     created_by_profile_id uuid references access_profiles(id) on delete set null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   )
+`;
+
+await sql`
+  alter table study_courses
+  add column if not exists category text not null default 'course',
+  add column if not exists cover_image_url text not null default ''
 `;
 
 await sql`
