@@ -16,6 +16,7 @@ export const PERMISSION_KEYS = [
   "admin.wishlist.update",
   "admin.suggestions.read",
   "admin.tasks.manage",
+  "admin.studies.manage",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -33,6 +34,7 @@ const ROLE_PERMISSIONS: Record<AccessRole, PermissionKey[]> = {
     "admin.wishlist.update",
     "admin.suggestions.read",
     "admin.tasks.manage",
+    "admin.studies.manage",
   ],
   editor: [
     "wishlist.read",

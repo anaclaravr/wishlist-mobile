@@ -8,32 +8,59 @@
   --background-soft: #f6f7fb;
   --foreground: #131722;
   --border-soft: #dde2ec;
+  --ds-font-sans:
+    var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --ds-font-weight-regular: 325;
+  --ds-font-weight-medium: 400;
+  --ds-font-weight-semibold: 475;
+  --ds-font-weight-bold: 575;
+  --ds-letter-spacing-tight: 0;
+  --ds-letter-spacing-normal: 0;
+  --ds-letter-spacing-wide: 0;
+  --ds-leading-none: 1;
+  --ds-leading-tight: 1.15;
+  --ds-leading-snug: 1.35;
+  --ds-leading-normal: 1.5;
+  --ds-leading-relaxed: 1.65;
+  --ds-text-xs: 0.75rem;
+  --ds-text-sm: 0.875rem;
+  --ds-text-base: 1rem;
+  --ds-text-lg: 1.125rem;
+  --ds-text-xl: 1.25rem;
+  --ds-text-2xl: 1.5rem;
+  --ds-text-3xl: 1.875rem;
+  --ds-text-4xl: 2.25rem;
   --ds-radius-sm: 8px;
   --ds-radius-md: 10px;
   --ds-radius-lg: 14px;
   --ds-shadow-soft: 0 1px 2px rgba(18, 26, 42, 0.05), 0 6px 18px rgba(18, 26, 42, 0.08);
   --ds-ring: 0 0 0 2px #f4f7ff, 0 0 0 4px #7b97f2;
+  --ds-app-shell-bg: #f3f4f3;
+  --ds-app-panel-border: #e0e3df;
+  --ds-app-panel-shadow: 0 1px 2px rgba(18, 26, 42, 0.04);
 
   /* Sidebar tokens */
-  --ds-sidebar-bg: #f4f6fb;
-  --ds-sidebar-border: #dfe4ef;
-  --ds-sidebar-section-title: #8a92a7;
-  --ds-sidebar-item-text: #4a5269;
-  --ds-sidebar-item-text-hover: #1f2b46;
-  --ds-sidebar-item-bg-hover: #ffffff;
-  --ds-sidebar-item-bg-active: #e8e6f7;
-  --ds-sidebar-item-text-active: #4b3fb1;
+  --ds-sidebar-bg: #f3f4f3;
+  --ds-sidebar-border: #dfe3df;
+  --ds-sidebar-section-title: #7a817b;
+  --ds-sidebar-item-text: #5f6962;
+  --ds-sidebar-item-text-hover: #20251f;
+  --ds-sidebar-item-bg-hover: #e9ece9;
+  --ds-sidebar-item-bg-active: #ffffff;
+  --ds-sidebar-item-border-active: #dfe3df;
+  --ds-sidebar-item-text-active: #121512;
   --ds-sidebar-subitem-text: #57617b;
   --ds-sidebar-subitem-text-active: #2f3b72;
   --ds-sidebar-subitem-bg-active: #ffffff;
-  --ds-sidebar-connector: #d7deeb;
-  --ds-sidebar-focus-ring: #92a3ca;
-  --ds-sidebar-icon: #5d667d;
-  --ds-sidebar-icon-hover: #1f2b46;
-  --ds-sidebar-radius-md: 12px;
+  --ds-sidebar-connector: #dfe3df;
+  --ds-sidebar-focus-ring: #8f9a8b;
+  --ds-sidebar-icon: #626a60;
+  --ds-sidebar-icon-hover: #1d221c;
+  --ds-sidebar-radius-md: 14px;
   --ds-sidebar-radius-sm: 10px;
-  --ds-sidebar-shadow-soft: 0 8px 18px rgba(27, 36, 54, 0.08);
-  --ds-sidebar-shadow-flyout: 0 18px 38px rgba(24, 32, 48, 0.14);
+  --ds-sidebar-shadow-soft: 0 1px 2px rgba(18, 26, 42, 0.05), 0 8px 18px rgba(18, 26, 42, 0.06);
+  --ds-sidebar-shadow-flyout: 0 16px 36px rgba(24, 32, 48, 0.13);
 }
 
 * {
@@ -50,11 +77,13 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    var(--font-raleway), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  letter-spacing: 0;
-  font-weight: 400;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-font-weight-regular);
+  line-height: var(--ds-leading-normal);
+  letter-spacing: var(--ds-letter-spacing-normal);
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -73,30 +102,46 @@ input {
   color: #111827;
 }
 
-/* Typography tuning: lighter weights and tighter tracking across the app */
+/* Typography tokens mapped to common Tailwind utilities */
+.font-normal {
+  font-weight: var(--ds-font-weight-regular);
+}
+
+.font-medium {
+  font-weight: var(--ds-font-weight-medium);
+}
+
 .font-semibold {
-  font-weight: 500;
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .font-bold {
-  font-weight: 600;
+  font-weight: var(--ds-font-weight-bold);
 }
 
-.tracking-wide {
-  letter-spacing: 0;
+.tracking-tighter,
+.tracking-tight,
+.tracking-normal,
+.tracking-wide,
+.tracking-wider,
+.tracking-widest {
+  letter-spacing: var(--ds-letter-spacing-wide);
 }
 
 .tracking-\[0\.18em\],
 .tracking-\[0\.16em\],
 .tracking-\[0\.14em\],
 .tracking-\[0\.09em\],
+.tracking-\[0\.08em\],
+.tracking-\[0\.04em\],
 .tracking-\[0\.02em\],
-.tracking-\[0\.01em\] {
-  letter-spacing: 0;
+.tracking-\[0\.01em\],
+.tracking-\[0em\] {
+  letter-spacing: var(--ds-letter-spacing-normal);
 }
 
 .uppercase {
-  letter-spacing: 0;
+  letter-spacing: var(--ds-letter-spacing-normal);
 }
 
 .ds-focus:focus-visible {
@@ -106,4 +151,17 @@ input {
 .ds-sidebar {
   background: var(--ds-sidebar-bg);
   border-color: var(--ds-sidebar-border);
+}
+
+.ds-app-shell {
+  background: var(--ds-app-shell-bg);
+}
+
+.ds-app-panel {
+  min-width: 0;
+  margin: 0.5rem;
+  border: 1px solid var(--ds-app-panel-border);
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: var(--ds-app-panel-shadow);
 }

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CheckSquare, Heading1, Heading2, Heading3, List, Minus, Pilcrow } from "lucide-react";
+import { BookOpen, CheckSquare, Heading1, Heading2, Heading3, Image as ImageIcon, Link, List, Minus, Pilcrow } from "lucide-react";
 
 import { ListBox, type ListBoxItem } from "@/components/ui/button-system";
 
@@ -18,13 +18,24 @@ function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-export type RichTextBlockType = "paragraph" | "h1" | "h2" | "h3" | "bullet" | "checklist" | "divider";
+export type RichTextBlockType =
+  | "paragraph"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "bullet"
+  | "checklist"
+  | "divider"
+  | "link"
+  | "image"
+  | "reference";
 
 export type RichTextBlock = {
   id: string;
   type: RichTextBlockType;
   text: string;
   checked?: boolean;
+  url?: string;
 };
 
 const slashOptions: Array<{
@@ -38,6 +49,9 @@ const slashOptions: Array<{
   { id: "h3", label: "Heading 3", icon: <Heading3 aria-hidden="true" className="h-4 w-4" /> },
   { id: "bullet", label: "Bullet list", icon: <List aria-hidden="true" className="h-4 w-4" /> },
   { id: "checklist", label: "Checklist", icon: <CheckSquare aria-hidden="true" className="h-4 w-4" /> },
+  { id: "link", label: "Link", icon: <Link aria-hidden="true" className="h-4 w-4" /> },
+  { id: "image", label: "Imagem", icon: <ImageIcon aria-hidden="true" className="h-4 w-4" /> },
+  { id: "reference", label: "Referencia", icon: <BookOpen aria-hidden="true" className="h-4 w-4" /> },
   { id: "divider", label: "Divider", icon: <Minus aria-hidden="true" className="h-4 w-4" /> },
 ];
 
@@ -49,6 +63,10 @@ function isTextualBlock(type: RichTextBlockType) {
   return type !== "divider";
 }
 
+function extractUrl(text: string) {
+  return text.match(/https?:\/\/[^\s]+/i)?.[0] ?? "";
+}
+
 function blocksSignature(blocks: RichTextBlock[]) {
   return JSON.stringify(
     blocks.map((block) => ({
@@ -56,6 +74,7 @@ function blocksSignature(blocks: RichTextBlock[]) {
       type: block.type,
       text: block.text,
       checked: Boolean(block.checked),
+      url: block.url ?? "",
     })),
   );
 }
@@ -145,6 +164,7 @@ function readBlocksFromDom(root: HTMLElement): RichTextBlock[] {
       type,
       text: type === "divider" ? "" : normalizeDomText(getBlockText(block)),
       checked: type === "checklist" ? block.dataset.checked === "true" : undefined,
+      url: type === "link" || type === "image" || type === "reference" ? extractUrl(normalizeDomText(getBlockText(block))) || block.dataset.url || undefined : undefined,
     };
   });
 
@@ -165,7 +185,7 @@ function renderBlocksToDom(root: HTMLElement, blocks: RichTextBlock[]) {
       block.type === "h1" && "text-[2rem] font-semibold leading-tight text-[#121723]",
       block.type === "h2" && "text-[1.5rem] font-semibold leading-tight text-[#121723]",
       block.type === "h3" && "text-[1.15rem] font-semibold leading-tight text-[#121723]",
-      (block.type === "paragraph" || block.type === "bullet" || block.type === "checklist") &&
+      (block.type === "paragraph" || block.type === "bullet" || block.type === "checklist" || block.type === "link" || block.type === "image" || block.type === "reference") &&
         "text-sm leading-7 text-[#1d2638]",
     );
 
@@ -197,6 +217,21 @@ function renderBlocksToDom(root: HTMLElement, blocks: RichTextBlock[]) {
       }
     }
 
+    if (block.type === "link" || block.type === "image" || block.type === "reference") {
+      const url = block.url || extractUrl(block.text);
+      blockElement.dataset.url = url;
+      blockElement.className = cx(
+        blockElement.className,
+        "grid grid-cols-[auto_1fr] items-start gap-3 rounded-[12px] border border-[#dfe6f2] bg-[#fbfcff] px-3 py-2",
+      );
+      const icon = document.createElement("span");
+      icon.contentEditable = "false";
+      icon.className = "mt-1 text-[#4f6fad]";
+      icon.textContent = block.type === "image" ? "IMG" : block.type === "reference" ? "REF" : "URL";
+      blockElement.appendChild(icon);
+
+    }
+
     const textElement = document.createElement("span");
     textElement.dataset.blockText = "true";
     textElement.className = cx("block min-w-0 whitespace-pre-wrap outline-none", block.type === "checklist" && block.checked && "text-[#7e8798] line-through");
@@ -205,6 +240,19 @@ function renderBlocksToDom(root: HTMLElement, blocks: RichTextBlock[]) {
       textElement.appendChild(document.createElement("br"));
     }
     blockElement.appendChild(textElement);
+    if (block.type === "image") {
+      const url = block.url || extractUrl(block.text);
+      if (url) {
+        const preview = document.createElement("img");
+        preview.src = url;
+        preview.alt = "";
+        preview.loading = "lazy";
+        preview.contentEditable = "false";
+        preview.className = "col-span-2 mt-1 max-h-48 w-full rounded-[12px] object-cover";
+        preview.onerror = () => preview.remove();
+        blockElement.appendChild(preview);
+      }
+    }
     fragment.appendChild(blockElement);
   });
 
@@ -313,6 +361,7 @@ export function RichTextEditor({
           type: option.id,
           text: textWithoutCommand,
           checked: option.id === "checklist" ? Boolean(current.checked) : undefined,
+          url: option.id === "link" || option.id === "image" || option.id === "reference" ? extractUrl(textWithoutCommand) : undefined,
         };
         const nextBlocks = blocks.map((block) => (block.id === current.id ? nextBlock : block));
         commitBlocks(nextBlocks, { blockId: current.id, offset: Math.max(0, slashIndex >= 0 ? slashIndex : textWithoutCommand.length) });

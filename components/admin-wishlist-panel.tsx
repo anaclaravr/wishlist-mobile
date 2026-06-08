@@ -610,7 +610,7 @@ export function AdminWishlistPanel({
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="ds-app-shell min-h-screen">
       <div
         className={`grid min-h-screen transition-[grid-template-columns] duration-300 ${
           isSidebarCollapsed ? "lg:grid-cols-[92px_1fr]" : "lg:grid-cols-[272px_1fr]"
@@ -627,7 +627,7 @@ export function AdminWishlistPanel({
           setIsCollapsed={setIsSidebarCollapsed}
         />
 
-        <section className="bg-[#f8f9fd]">
+        <section className="ds-app-panel">
           <header className="border-b border-[#dee4ef] px-4 py-5 sm:px-6 sm:py-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>

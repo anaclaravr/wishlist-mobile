@@ -182,6 +182,18 @@ type LegacySuggestionRow = {
 type AdminTaskStatus = "pending" | "in_progress" | "done";
 type AdminTaskPriority = "low" | "medium" | "high" | null;
 type AdminTaskCategory = string;
+export type StudyPriority = "low" | "medium" | "high" | null;
+export type StudyTopicStatus = "not_started" | "in_progress" | "done";
+export type StudyPendingStatus = "pending" | "in_progress" | "done";
+export type StudyMaterialType = "link" | "image" | "file_reference" | "reference";
+
+export type StudyNoteBlock = {
+  id?: string;
+  type?: string;
+  text?: string;
+  checked?: boolean;
+  url?: string;
+};
 
 type AdminTaskRow = {
   id: string;
@@ -205,6 +217,77 @@ type PageSettingsRow = {
   pageKey: string;
   config: unknown;
   updatedByProfileId: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StudyCourseRow = {
+  id: string;
+  wishlistId: string;
+  title: string;
+  description: string;
+  priority: string | null;
+  sortOrder: number | null;
+  createdByProfileId: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StudyModuleRow = {
+  id: string;
+  wishlistId: string;
+  courseId: string | null;
+  title: string;
+  description: string;
+  priority: string | null;
+  sortOrder: number | null;
+  createdByProfileId: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StudyTopicRow = {
+  id: string;
+  wishlistId: string;
+  moduleId: string;
+  title: string;
+  notes: unknown;
+  status: string | null;
+  priority: string | null;
+  dueAt: Date | string | null;
+  sortOrder: number | null;
+  completedAt: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StudyMaterialRow = {
+  id: string;
+  wishlistId: string;
+  moduleId: string | null;
+  topicId: string | null;
+  type: string | null;
+  title: string;
+  url: string | null;
+  description: string;
+  metadata: string;
+  sortOrder: number | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StudyPendingItemRow = {
+  id: string;
+  wishlistId: string;
+  moduleId: string | null;
+  topicId: string | null;
+  adminTaskId: string | null;
+  title: string;
+  status: string | null;
+  priority: string | null;
+  dueAt: Date | string | null;
+  syncToTasks: boolean;
+  completedAt: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -286,6 +369,97 @@ export type AdminTask = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+};
+
+export type StudyMaterial = {
+  id: string;
+  wishlistId: string;
+  moduleId: string | null;
+  topicId: string | null;
+  type: StudyMaterialType;
+  title: string;
+  url: string | null;
+  description: string;
+  metadata: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StudyTopic = {
+  id: string;
+  wishlistId: string;
+  moduleId: string;
+  title: string;
+  notes: StudyNoteBlock[];
+  status: StudyTopicStatus;
+  priority: StudyPriority;
+  dueAt: string | null;
+  sortOrder: number;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  materials: StudyMaterial[];
+};
+
+export type StudyModule = {
+  id: string;
+  wishlistId: string;
+  courseId: string | null;
+  title: string;
+  description: string;
+  priority: StudyPriority;
+  sortOrder: number;
+  createdByProfileId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  topics: StudyTopic[];
+  materials: StudyMaterial[];
+  progress: number;
+};
+
+export type StudyCourse = {
+  id: string;
+  wishlistId: string;
+  title: string;
+  description: string;
+  priority: StudyPriority;
+  sortOrder: number;
+  createdByProfileId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  modules: StudyModule[];
+  progress: number;
+};
+
+export type StudyPendingItem = {
+  id: string;
+  wishlistId: string;
+  moduleId: string | null;
+  topicId: string | null;
+  adminTaskId: string | null;
+  title: string;
+  status: StudyPendingStatus;
+  priority: StudyPriority;
+  dueAt: string | null;
+  syncToTasks: boolean;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StudyDashboardData = {
+  courses: StudyCourse[];
+  modules: StudyModule[];
+  pendingItems: StudyPendingItem[];
+  stats: {
+    modulesCount: number;
+    topicsCount: number;
+    completedTopicsCount: number;
+    overallProgress: number;
+    openPendingCount: number;
+    dueSoonCount: number;
+  };
 };
 
 export type PageSettings = {
@@ -430,6 +604,147 @@ function toAdminTask(row: AdminTaskRow): AdminTask {
     createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
     updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
     completedAt: toIso(row.completedAt),
+  };
+}
+
+function normalizeStudyPriority(value: string | null): StudyPriority {
+  if (value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeStudyTopicStatus(value: string | null): StudyTopicStatus {
+  if (value === "in_progress" || value === "done") {
+    return value;
+  }
+  return "not_started";
+}
+
+function normalizeStudyPendingStatus(value: string | null): StudyPendingStatus {
+  if (value === "in_progress" || value === "done") {
+    return value;
+  }
+  return "pending";
+}
+
+function normalizeStudyMaterialType(value: string | null): StudyMaterialType {
+  if (value === "image" || value === "file_reference" || value === "reference") {
+    return value;
+  }
+  return "link";
+}
+
+function normalizeStudyNotes(value: unknown): StudyNoteBlock[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((block): StudyNoteBlock | null => {
+      if (!block || typeof block !== "object") {
+        return null;
+      }
+
+      const record = block as Record<string, unknown>;
+      return {
+        id: typeof record.id === "string" ? record.id : undefined,
+        type: typeof record.type === "string" ? record.type : "paragraph",
+        text: typeof record.text === "string" ? record.text : "",
+        checked: typeof record.checked === "boolean" ? record.checked : undefined,
+        url: typeof record.url === "string" ? record.url : undefined,
+      };
+    })
+    .filter((block): block is StudyNoteBlock => Boolean(block));
+}
+
+function toStudyMaterial(row: StudyMaterialRow): StudyMaterial {
+  return {
+    id: row.id,
+    wishlistId: row.wishlistId,
+    moduleId: row.moduleId,
+    topicId: row.topicId,
+    type: normalizeStudyMaterialType(row.type),
+    title: row.title,
+    url: row.url,
+    description: row.description,
+    metadata: row.metadata,
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
+    createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
+  };
+}
+
+function toStudyTopic(row: StudyTopicRow, materials: StudyMaterial[] = []): StudyTopic {
+  return {
+    id: row.id,
+    wishlistId: row.wishlistId,
+    moduleId: row.moduleId,
+    title: row.title,
+    notes: normalizeStudyNotes(row.notes),
+    status: normalizeStudyTopicStatus(row.status),
+    priority: normalizeStudyPriority(row.priority),
+    dueAt: toIso(row.dueAt),
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
+    completedAt: toIso(row.completedAt),
+    createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
+    materials,
+  };
+}
+
+function toStudyModule(row: StudyModuleRow, topics: StudyTopic[] = [], materials: StudyMaterial[] = []): StudyModule {
+  const completedTopics = topics.filter((topic) => topic.status === "done").length;
+  return {
+    id: row.id,
+    wishlistId: row.wishlistId,
+    courseId: row.courseId,
+    title: row.title,
+    description: row.description,
+    priority: normalizeStudyPriority(row.priority),
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
+    createdByProfileId: row.createdByProfileId,
+    createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
+    topics,
+    materials,
+    progress: topics.length ? Math.round((completedTopics / topics.length) * 100) : 0,
+  };
+}
+
+function toStudyCourse(row: StudyCourseRow, modules: StudyModule[] = []): StudyCourse {
+  const topics = modules.flatMap((module) => module.topics);
+  const completedTopics = topics.filter((topic) => topic.status === "done").length;
+  return {
+    id: row.id,
+    wishlistId: row.wishlistId,
+    title: row.title,
+    description: row.description,
+    priority: normalizeStudyPriority(row.priority),
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : 0,
+    createdByProfileId: row.createdByProfileId,
+    createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
+    modules,
+    progress: topics.length ? Math.round((completedTopics / topics.length) * 100) : 0,
+  };
+}
+
+function toStudyPendingItem(row: StudyPendingItemRow): StudyPendingItem {
+  return {
+    id: row.id,
+    wishlistId: row.wishlistId,
+    moduleId: row.moduleId,
+    topicId: row.topicId,
+    adminTaskId: row.adminTaskId,
+    title: row.title,
+    status: normalizeStudyPendingStatus(row.status),
+    priority: normalizeStudyPriority(row.priority),
+    dueAt: toIso(row.dueAt),
+    syncToTasks: row.syncToTasks,
+    completedAt: toIso(row.completedAt),
+    createdAt: toIso(row.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIso(row.updatedAt) ?? new Date().toISOString(),
   };
 }
 
@@ -1731,6 +2046,935 @@ export async function deleteAdminTask(id: string) {
     throw new PublicError("Tarefa nao encontrada.", 404);
   }
 
+  return { ok: true };
+}
+
+export async function listStudyData(input: { wishlistId: string }): Promise<StudyDashboardData> {
+  const sql = getSql();
+  const [courseRows, moduleRows, topicRows, materialRows, pendingRows] = await Promise.all([
+    sql<StudyCourseRow[]>`
+      select
+        id,
+        wishlist_id as "wishlistId",
+        title,
+        description,
+        priority,
+        sort_order as "sortOrder",
+        created_by_profile_id as "createdByProfileId",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      from study_courses
+      where wishlist_id = ${input.wishlistId}
+      order by sort_order asc, created_at desc
+    `,
+    sql<StudyModuleRow[]>`
+      select
+        id,
+        wishlist_id as "wishlistId",
+        course_id as "courseId",
+        title,
+        description,
+        priority,
+        sort_order as "sortOrder",
+        created_by_profile_id as "createdByProfileId",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      from study_modules
+      where wishlist_id = ${input.wishlistId}
+      order by sort_order asc, created_at desc
+    `,
+    sql<StudyTopicRow[]>`
+      select
+        id,
+        wishlist_id as "wishlistId",
+        module_id as "moduleId",
+        title,
+        notes,
+        status,
+        priority,
+        due_at as "dueAt",
+        sort_order as "sortOrder",
+        completed_at as "completedAt",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      from study_topics
+      where wishlist_id = ${input.wishlistId}
+      order by module_id asc, sort_order asc, created_at desc
+    `,
+    sql<StudyMaterialRow[]>`
+      select
+        id,
+        wishlist_id as "wishlistId",
+        module_id as "moduleId",
+        topic_id as "topicId",
+        type,
+        title,
+        url,
+        description,
+        metadata,
+        sort_order as "sortOrder",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      from study_materials
+      where wishlist_id = ${input.wishlistId}
+      order by sort_order asc, created_at desc
+    `,
+    sql<StudyPendingItemRow[]>`
+      select
+        id,
+        wishlist_id as "wishlistId",
+        module_id as "moduleId",
+        topic_id as "topicId",
+        admin_task_id as "adminTaskId",
+        title,
+        status,
+        priority,
+        due_at as "dueAt",
+        sync_to_tasks as "syncToTasks",
+        completed_at as "completedAt",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      from study_pending_items
+      where wishlist_id = ${input.wishlistId}
+      order by
+        case when status = 'done' then 1 else 0 end asc,
+        due_at asc nulls last,
+        created_at desc
+    `,
+  ]);
+
+  const materials = materialRows.map(toStudyMaterial);
+  const topics = topicRows.map((topic) =>
+    toStudyTopic(
+      topic,
+      materials.filter((material) => material.topicId === topic.id),
+    ),
+  );
+  const modules = moduleRows.map((module) =>
+    toStudyModule(
+      module,
+      topics.filter((topic) => topic.moduleId === module.id),
+      materials.filter((material) => material.moduleId === module.id && !material.topicId),
+    ),
+  );
+  const courses = courseRows.map((course) =>
+    toStudyCourse(
+      course,
+      modules.filter((module) => module.courseId === course.id),
+    ),
+  );
+  const pendingItems = pendingRows.map(toStudyPendingItem);
+  const topicsCount = topics.length;
+  const completedTopicsCount = topics.filter((topic) => topic.status === "done").length;
+  const dueSoonThreshold = Date.now() + 1000 * 60 * 60 * 24 * 7;
+
+  return {
+    courses,
+    modules,
+    pendingItems,
+    stats: {
+      modulesCount: modules.length,
+      topicsCount,
+      completedTopicsCount,
+      overallProgress: topicsCount ? Math.round((completedTopicsCount / topicsCount) * 100) : 0,
+      openPendingCount: pendingItems.filter((item) => item.status !== "done").length,
+      dueSoonCount: pendingItems.filter((item) => {
+        if (item.status === "done" || !item.dueAt) return false;
+        const dueTime = new Date(item.dueAt).getTime();
+        return Number.isFinite(dueTime) && dueTime <= dueSoonThreshold;
+      }).length,
+    },
+  };
+}
+
+export async function createStudyCourse(input: {
+  wishlistId: string;
+  title: string;
+  description?: string;
+  priority?: StudyPriority;
+  createdByProfileId: string;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyCourseRow[]>`
+    insert into study_courses (
+      wishlist_id,
+      title,
+      description,
+      priority,
+      sort_order,
+      created_by_profile_id
+    )
+    values (
+      ${input.wishlistId},
+      ${input.title.trim()},
+      ${input.description?.trim() ?? ""},
+      ${input.priority ?? null},
+      (select coalesce(max(sort_order), 0) + 1000 from study_courses where wishlist_id = ${input.wishlistId}),
+      ${input.createdByProfileId}
+    )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      title,
+      description,
+      priority,
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  return toStudyCourse(row);
+}
+
+export async function updateStudyCourse(input: {
+  id: string;
+  wishlistId: string;
+  title: string;
+  description?: string;
+  priority?: StudyPriority;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyCourseRow[]>`
+    update study_courses
+    set
+      title = ${input.title.trim()},
+      description = ${input.description?.trim() ?? ""},
+      priority = ${input.priority ?? null},
+      updated_at = now()
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      title,
+      description,
+      priority,
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) {
+    throw new PublicError("Curso nao encontrado.", 404);
+  }
+
+  return toStudyCourse(row);
+}
+
+export async function deleteStudyCourse(input: { id: string; wishlistId: string }) {
+  const sql = getSql();
+  const [row] = await sql<{ id: string }[]>`
+    delete from study_courses
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning id
+  `;
+
+  if (!row) {
+    throw new PublicError("Curso nao encontrado.", 404);
+  }
+
+  return { ok: true };
+}
+
+export async function createStudyModule(input: {
+  wishlistId: string;
+  courseId: string;
+  title: string;
+  description?: string;
+  priority?: StudyPriority;
+  createdByProfileId: string;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyModuleRow[]>`
+    insert into study_modules (
+      wishlist_id,
+      course_id,
+      title,
+      description,
+      priority,
+      sort_order,
+      created_by_profile_id
+    )
+    select
+      ${input.wishlistId},
+      ${input.courseId},
+      ${input.title.trim()},
+      ${input.description?.trim() ?? ""},
+      ${input.priority ?? null},
+      (select coalesce(max(sort_order), 0) + 1000 from study_modules where wishlist_id = ${input.wishlistId} and course_id = ${input.courseId}),
+      ${input.createdByProfileId}
+    where exists (
+      select 1
+      from study_courses
+      where id = ${input.courseId}
+        and wishlist_id = ${input.wishlistId}
+    )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      course_id as "courseId",
+      title,
+      description,
+      priority,
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Curso nao encontrado.", 404);
+  return toStudyModule(row);
+}
+
+export async function updateStudyModule(input: {
+  id: string;
+  wishlistId: string;
+  courseId?: string;
+  title: string;
+  description?: string;
+  priority?: StudyPriority;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyModuleRow[]>`
+    update study_modules
+    set
+      course_id = coalesce(${input.courseId ?? null}, course_id),
+      title = ${input.title.trim()},
+      description = ${input.description?.trim() ?? ""},
+      priority = ${input.priority ?? null},
+      updated_at = now()
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+      and (
+        ${input.courseId ?? null}::uuid is null
+        or exists (select 1 from study_courses where id = ${input.courseId ?? null} and wishlist_id = ${input.wishlistId})
+      )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      course_id as "courseId",
+      title,
+      description,
+      priority,
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) {
+    throw new PublicError("Modulo de estudo nao encontrado.", 404);
+  }
+
+  return toStudyModule(row);
+}
+
+export async function deleteStudyModule(input: { id: string; wishlistId: string }) {
+  const sql = getSql();
+  const [row] = await sql<{ id: string }[]>`
+    delete from study_modules
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning id
+  `;
+
+  if (!row) {
+    throw new PublicError("Modulo de estudo nao encontrado.", 404);
+  }
+
+  return { ok: true };
+}
+
+async function rebalanceStudyModuleOrder(wishlistId: string, courseId: string) {
+  const sql = getSql();
+  await sql`
+    with ordered as (
+      select id, row_number() over (order by sort_order asc, created_at desc) * 1000 as next_sort_order
+      from study_modules
+      where wishlist_id = ${wishlistId}
+        and course_id = ${courseId}
+    )
+    update study_modules
+    set sort_order = ordered.next_sort_order
+    from ordered
+    where study_modules.id = ordered.id
+  `;
+}
+
+export async function reorderStudyModule(input: {
+  wishlistId: string;
+  moduleId: string;
+  courseId: string;
+  beforeId?: string | null;
+  afterId?: string | null;
+}) {
+  const sql = getSql();
+  const neighborIds = [input.beforeId, input.afterId].filter((id): id is string => Boolean(id));
+  const neighbors = neighborIds.length
+    ? await sql<Array<{ id: string; sortOrder: number | null }>>`
+        select id, sort_order as "sortOrder"
+        from study_modules
+        where wishlist_id = ${input.wishlistId}
+          and course_id = ${input.courseId}
+          and id in ${sql(neighborIds)}
+      `
+    : [];
+  const before = input.beforeId ? neighbors.find((neighbor) => neighbor.id === input.beforeId) : null;
+  const after = input.afterId ? neighbors.find((neighbor) => neighbor.id === input.afterId) : null;
+  if (input.beforeId && !before) throw new PublicError("Modulo anterior nao encontrado.", 404);
+  if (input.afterId && !after) throw new PublicError("Modulo posterior nao encontrado.", 404);
+
+  let nextSortOrder = 1000;
+  if (before && after) {
+    nextSortOrder = ((before.sortOrder ?? 0) + (after.sortOrder ?? 0)) / 2;
+  } else if (before) {
+    nextSortOrder = (before.sortOrder ?? 0) + 1000;
+  } else if (after) {
+    nextSortOrder = (after.sortOrder ?? 0) - 1000;
+  } else {
+    const [{ maxSortOrder }] = await sql<Array<{ maxSortOrder: number | null }>>`
+      select max(sort_order) as "maxSortOrder"
+      from study_modules
+      where wishlist_id = ${input.wishlistId}
+        and course_id = ${input.courseId}
+        and id <> ${input.moduleId}
+    `;
+    nextSortOrder = (maxSortOrder ?? 0) + 1000;
+  }
+
+  const [row] = await sql<StudyModuleRow[]>`
+    update study_modules
+    set course_id = ${input.courseId}, sort_order = ${nextSortOrder}, updated_at = now()
+    where id = ${input.moduleId}
+      and wishlist_id = ${input.wishlistId}
+      and exists (select 1 from study_courses where id = ${input.courseId} and wishlist_id = ${input.wishlistId})
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      course_id as "courseId",
+      title,
+      description,
+      priority,
+      sort_order as "sortOrder",
+      created_by_profile_id as "createdByProfileId",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Modulo de estudo nao encontrado.", 404);
+  if (before && after && Math.abs((after.sortOrder ?? 0) - (before.sortOrder ?? 0)) < 1) {
+    await rebalanceStudyModuleOrder(input.wishlistId, input.courseId);
+  }
+
+  return toStudyModule(row);
+}
+
+export async function createStudyTopic(input: {
+  wishlistId: string;
+  moduleId: string;
+  title: string;
+  notes?: StudyNoteBlock[];
+  status?: StudyTopicStatus;
+  priority?: StudyPriority;
+  dueAt?: string | null;
+}) {
+  const sql = getSql();
+  const status = input.status ?? "not_started";
+  const [row] = await sql<StudyTopicRow[]>`
+    insert into study_topics (
+      wishlist_id,
+      module_id,
+      title,
+      notes,
+      status,
+      priority,
+      due_at,
+      sort_order,
+      completed_at
+    )
+    select
+      ${input.wishlistId},
+      ${input.moduleId},
+      ${input.title.trim()},
+      ${JSON.stringify(input.notes ?? [])}::jsonb,
+      ${status},
+      ${input.priority ?? null},
+      ${input.dueAt ? new Date(input.dueAt) : null},
+      (select coalesce(max(sort_order), 0) + 1000 from study_topics where module_id = ${input.moduleId}),
+      case when ${status} = 'done' then now() else null end
+    where exists (
+      select 1 from study_modules where id = ${input.moduleId} and wishlist_id = ${input.wishlistId}
+    )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      title,
+      notes,
+      status,
+      priority,
+      due_at as "dueAt",
+      sort_order as "sortOrder",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Modulo de estudo nao encontrado.", 404);
+  return toStudyTopic(row);
+}
+
+export async function updateStudyTopic(input: {
+  id: string;
+  wishlistId: string;
+  moduleId?: string;
+  title: string;
+  notes?: StudyNoteBlock[];
+  status?: StudyTopicStatus;
+  priority?: StudyPriority;
+  dueAt?: string | null;
+}) {
+  const sql = getSql();
+  const status = input.status ?? "not_started";
+  const [row] = await sql<StudyTopicRow[]>`
+    update study_topics
+    set
+      module_id = coalesce(${input.moduleId ?? null}, module_id),
+      title = ${input.title.trim()},
+      notes = ${JSON.stringify(input.notes ?? [])}::jsonb,
+      status = ${status},
+      priority = ${input.priority ?? null},
+      due_at = ${input.dueAt ? new Date(input.dueAt) : null},
+      completed_at = case when ${status} = 'done' then coalesce(completed_at, now()) else null end,
+      updated_at = now()
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+      and (
+        ${input.moduleId ?? null}::uuid is null
+        or exists (select 1 from study_modules where id = ${input.moduleId ?? null} and wishlist_id = ${input.wishlistId})
+      )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      title,
+      notes,
+      status,
+      priority,
+      due_at as "dueAt",
+      sort_order as "sortOrder",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) {
+    throw new PublicError("Topico de estudo nao encontrado.", 404);
+  }
+
+  return toStudyTopic(row);
+}
+
+export async function deleteStudyTopic(input: { id: string; wishlistId: string }) {
+  const sql = getSql();
+  const [row] = await sql<{ id: string }[]>`
+    delete from study_topics
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning id
+  `;
+
+  if (!row) throw new PublicError("Topico de estudo nao encontrado.", 404);
+  return { ok: true };
+}
+
+async function rebalanceStudyTopicOrder(moduleId: string) {
+  const sql = getSql();
+  await sql`
+    with ordered as (
+      select id, row_number() over (order by sort_order asc, created_at desc) * 1000 as next_sort_order
+      from study_topics
+      where module_id = ${moduleId}
+    )
+    update study_topics
+    set sort_order = ordered.next_sort_order
+    from ordered
+    where study_topics.id = ordered.id
+  `;
+}
+
+export async function reorderStudyTopic(input: {
+  wishlistId: string;
+  topicId: string;
+  moduleId: string;
+  beforeId?: string | null;
+  afterId?: string | null;
+}) {
+  const sql = getSql();
+  const neighborIds = [input.beforeId, input.afterId].filter((id): id is string => Boolean(id));
+  const neighbors = neighborIds.length
+    ? await sql<Array<{ id: string; sortOrder: number | null }>>`
+        select id, sort_order as "sortOrder"
+        from study_topics
+        where wishlist_id = ${input.wishlistId}
+          and module_id = ${input.moduleId}
+          and id in ${sql(neighborIds)}
+      `
+    : [];
+  const before = input.beforeId ? neighbors.find((neighbor) => neighbor.id === input.beforeId) : null;
+  const after = input.afterId ? neighbors.find((neighbor) => neighbor.id === input.afterId) : null;
+  if (input.beforeId && !before) throw new PublicError("Topico anterior nao encontrado.", 404);
+  if (input.afterId && !after) throw new PublicError("Topico posterior nao encontrado.", 404);
+
+  let nextSortOrder = 1000;
+  if (before && after) {
+    nextSortOrder = ((before.sortOrder ?? 0) + (after.sortOrder ?? 0)) / 2;
+  } else if (before) {
+    nextSortOrder = (before.sortOrder ?? 0) + 1000;
+  } else if (after) {
+    nextSortOrder = (after.sortOrder ?? 0) - 1000;
+  } else {
+    const [{ maxSortOrder }] = await sql<Array<{ maxSortOrder: number | null }>>`
+      select max(sort_order) as "maxSortOrder"
+      from study_topics
+      where module_id = ${input.moduleId}
+        and id <> ${input.topicId}
+    `;
+    nextSortOrder = (maxSortOrder ?? 0) + 1000;
+  }
+
+  const [row] = await sql<StudyTopicRow[]>`
+    update study_topics
+    set module_id = ${input.moduleId}, sort_order = ${nextSortOrder}, updated_at = now()
+    where id = ${input.topicId}
+      and wishlist_id = ${input.wishlistId}
+      and exists (select 1 from study_modules where id = ${input.moduleId} and wishlist_id = ${input.wishlistId})
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      title,
+      notes,
+      status,
+      priority,
+      due_at as "dueAt",
+      sort_order as "sortOrder",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Topico de estudo nao encontrado.", 404);
+  if (before && after && Math.abs((after.sortOrder ?? 0) - (before.sortOrder ?? 0)) < 1) {
+    await rebalanceStudyTopicOrder(input.moduleId);
+  }
+  return toStudyTopic(row);
+}
+
+export async function createStudyMaterial(input: {
+  wishlistId: string;
+  moduleId?: string | null;
+  topicId?: string | null;
+  type: StudyMaterialType;
+  title: string;
+  url?: string | null;
+  description?: string;
+  metadata?: string;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyMaterialRow[]>`
+    insert into study_materials (
+      wishlist_id,
+      module_id,
+      topic_id,
+      type,
+      title,
+      url,
+      description,
+      metadata,
+      sort_order
+    )
+    select
+      ${input.wishlistId},
+      ${input.moduleId ?? null},
+      ${input.topicId ?? null},
+      ${input.type},
+      ${input.title.trim()},
+      ${input.url?.trim() || null},
+      ${input.description?.trim() ?? ""},
+      ${input.metadata?.trim() ?? ""},
+      (select coalesce(max(sort_order), 0) + 1000 from study_materials where coalesce(topic_id, module_id) = coalesce(${input.topicId ?? null}, ${input.moduleId ?? null}))
+    where (
+      (${input.topicId ?? null}::uuid is not null and exists (select 1 from study_topics where id = ${input.topicId ?? null} and wishlist_id = ${input.wishlistId}))
+      or (${input.topicId ?? null}::uuid is null and ${input.moduleId ?? null}::uuid is not null and exists (select 1 from study_modules where id = ${input.moduleId ?? null} and wishlist_id = ${input.wishlistId}))
+    )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      topic_id as "topicId",
+      type,
+      title,
+      url,
+      description,
+      metadata,
+      sort_order as "sortOrder",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Destino do material nao encontrado.", 404);
+  return toStudyMaterial(row);
+}
+
+export async function updateStudyMaterial(input: {
+  id: string;
+  wishlistId: string;
+  type: StudyMaterialType;
+  title: string;
+  url?: string | null;
+  description?: string;
+  metadata?: string;
+}) {
+  const sql = getSql();
+  const [row] = await sql<StudyMaterialRow[]>`
+    update study_materials
+    set
+      type = ${input.type},
+      title = ${input.title.trim()},
+      url = ${input.url?.trim() || null},
+      description = ${input.description?.trim() ?? ""},
+      metadata = ${input.metadata?.trim() ?? ""},
+      updated_at = now()
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      topic_id as "topicId",
+      type,
+      title,
+      url,
+      description,
+      metadata,
+      sort_order as "sortOrder",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  if (!row) throw new PublicError("Material nao encontrado.", 404);
+  return toStudyMaterial(row);
+}
+
+export async function deleteStudyMaterial(input: { id: string; wishlistId: string }) {
+  const sql = getSql();
+  const [row] = await sql<{ id: string }[]>`
+    delete from study_materials
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning id
+  `;
+
+  if (!row) throw new PublicError("Material nao encontrado.", 404);
+  return { ok: true };
+}
+
+async function syncStudyPendingTask(input: {
+  existingTaskId?: string | null;
+  title: string;
+  status: StudyPendingStatus;
+  priority: StudyPriority;
+  dueAt?: string | null;
+  createdByProfileId: string;
+}) {
+  const taskStatus: AdminTaskStatus = input.status === "done" ? "done" : input.status === "in_progress" ? "in_progress" : "pending";
+  if (input.existingTaskId) {
+    return updateAdminTask({
+      id: input.existingTaskId,
+      title: input.title,
+      notes: "Pendencia de estudos sincronizada.",
+      status: taskStatus,
+      priority: input.priority,
+      category: "estudos",
+      tags: ["estudos"],
+      dueAt: input.dueAt ?? null,
+    });
+  }
+
+  return createAdminTask({
+    title: input.title,
+    notes: "Pendencia de estudos sincronizada.",
+    status: taskStatus,
+    priority: input.priority,
+    category: "estudos",
+    tags: ["estudos"],
+    dueAt: input.dueAt ?? null,
+    createdByProfileId: input.createdByProfileId,
+  });
+}
+
+export async function createStudyPendingItem(input: {
+  wishlistId: string;
+  moduleId?: string | null;
+  topicId?: string | null;
+  title: string;
+  status?: StudyPendingStatus;
+  priority?: StudyPriority;
+  dueAt?: string | null;
+  syncToTasks?: boolean;
+  createdByProfileId: string;
+}) {
+  const sql = getSql();
+  const status = input.status ?? "pending";
+  const syncedTask = input.syncToTasks
+    ? await syncStudyPendingTask({
+        title: input.title.trim(),
+        status,
+        priority: input.priority ?? null,
+        dueAt: input.dueAt ?? null,
+        createdByProfileId: input.createdByProfileId,
+      })
+    : null;
+
+  const [row] = await sql<StudyPendingItemRow[]>`
+    insert into study_pending_items (
+      wishlist_id,
+      module_id,
+      topic_id,
+      admin_task_id,
+      title,
+      status,
+      priority,
+      due_at,
+      sync_to_tasks,
+      completed_at
+    )
+    values (
+      ${input.wishlistId},
+      ${input.moduleId ?? null},
+      ${input.topicId ?? null},
+      ${syncedTask?.id ?? null},
+      ${input.title.trim()},
+      ${status},
+      ${input.priority ?? null},
+      ${input.dueAt ? new Date(input.dueAt) : null},
+      ${Boolean(input.syncToTasks)},
+      case when ${status} = 'done' then now() else null end
+    )
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      topic_id as "topicId",
+      admin_task_id as "adminTaskId",
+      title,
+      status,
+      priority,
+      due_at as "dueAt",
+      sync_to_tasks as "syncToTasks",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  return toStudyPendingItem(row);
+}
+
+export async function updateStudyPendingItem(input: {
+  id: string;
+  wishlistId: string;
+  moduleId?: string | null;
+  topicId?: string | null;
+  title: string;
+  status?: StudyPendingStatus;
+  priority?: StudyPriority;
+  dueAt?: string | null;
+  syncToTasks?: boolean;
+  createdByProfileId: string;
+}) {
+  const sql = getSql();
+  const [current] = await sql<StudyPendingItemRow[]>`
+    select
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      topic_id as "topicId",
+      admin_task_id as "adminTaskId",
+      title,
+      status,
+      priority,
+      due_at as "dueAt",
+      sync_to_tasks as "syncToTasks",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from study_pending_items
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+  `;
+
+  if (!current) throw new PublicError("Pendencia de estudo nao encontrada.", 404);
+
+  const status = input.status ?? "pending";
+  const syncedTask = input.syncToTasks
+    ? await syncStudyPendingTask({
+        existingTaskId: current.adminTaskId,
+        title: input.title.trim(),
+        status,
+        priority: input.priority ?? null,
+        dueAt: input.dueAt ?? null,
+        createdByProfileId: input.createdByProfileId,
+      })
+    : null;
+
+  const [row] = await sql<StudyPendingItemRow[]>`
+    update study_pending_items
+    set
+      module_id = ${input.moduleId ?? null},
+      topic_id = ${input.topicId ?? null},
+      admin_task_id = ${input.syncToTasks ? syncedTask?.id ?? current.adminTaskId : null},
+      title = ${input.title.trim()},
+      status = ${status},
+      priority = ${input.priority ?? null},
+      due_at = ${input.dueAt ? new Date(input.dueAt) : null},
+      sync_to_tasks = ${Boolean(input.syncToTasks)},
+      completed_at = case when ${status} = 'done' then coalesce(completed_at, now()) else null end,
+      updated_at = now()
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning
+      id,
+      wishlist_id as "wishlistId",
+      module_id as "moduleId",
+      topic_id as "topicId",
+      admin_task_id as "adminTaskId",
+      title,
+      status,
+      priority,
+      due_at as "dueAt",
+      sync_to_tasks as "syncToTasks",
+      completed_at as "completedAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+  `;
+
+  return toStudyPendingItem(row);
+}
+
+export async function deleteStudyPendingItem(input: { id: string; wishlistId: string }) {
+  const sql = getSql();
+  const [row] = await sql<{ id: string }[]>`
+    delete from study_pending_items
+    where id = ${input.id}
+      and wishlist_id = ${input.wishlistId}
+    returning id
+  `;
+
+  if (!row) throw new PublicError("Pendencia de estudo nao encontrada.", 404);
   return { ok: true };
 }
 

@@ -254,6 +254,138 @@ await sql`
 `;
 
 await sql`
+  create table if not exists study_courses (
+    id uuid primary key default gen_random_uuid(),
+    wishlist_id uuid not null references wishlists(id) on delete cascade,
+    title text not null,
+    description text not null default '',
+    priority text,
+    sort_order double precision not null default 0,
+    created_by_profile_id uuid references access_profiles(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
+  create table if not exists study_modules (
+    id uuid primary key default gen_random_uuid(),
+    wishlist_id uuid not null references wishlists(id) on delete cascade,
+    title text not null,
+    description text not null default '',
+    priority text,
+    sort_order double precision not null default 0,
+    created_by_profile_id uuid references access_profiles(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
+  alter table study_modules
+  add column if not exists course_id uuid references study_courses(id) on delete cascade
+`;
+
+await sql`
+  insert into study_courses (
+    wishlist_id,
+    title,
+    description,
+    priority,
+    sort_order,
+    created_by_profile_id,
+    created_at,
+    updated_at
+  )
+  select
+    grouped.wishlist_id,
+    'Curso geral',
+    'Curso criado automaticamente para organizar os modulos existentes.',
+    null,
+    1000,
+    null,
+    min(grouped.created_at),
+    now()
+  from study_modules grouped
+  where grouped.course_id is null
+    and not exists (
+      select 1
+      from study_courses existing
+      where existing.wishlist_id = grouped.wishlist_id
+    )
+  group by grouped.wishlist_id
+`;
+
+await sql`
+  update study_modules
+  set course_id = fallback.id
+  from (
+    select distinct on (wishlist_id) id, wishlist_id
+    from study_courses
+    order by wishlist_id, sort_order asc, created_at asc
+  ) fallback
+  where study_modules.course_id is null
+    and study_modules.wishlist_id = fallback.wishlist_id
+`;
+
+await sql`
+  alter table study_modules
+  alter column course_id set not null
+`;
+
+await sql`
+  create table if not exists study_topics (
+    id uuid primary key default gen_random_uuid(),
+    wishlist_id uuid not null references wishlists(id) on delete cascade,
+    module_id uuid not null references study_modules(id) on delete cascade,
+    title text not null,
+    notes jsonb not null default '[]'::jsonb,
+    status text not null default 'not_started',
+    priority text,
+    due_at timestamptz,
+    sort_order double precision not null default 0,
+    completed_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
+  create table if not exists study_materials (
+    id uuid primary key default gen_random_uuid(),
+    wishlist_id uuid not null references wishlists(id) on delete cascade,
+    module_id uuid references study_modules(id) on delete cascade,
+    topic_id uuid references study_topics(id) on delete cascade,
+    type text not null,
+    title text not null,
+    url text,
+    description text not null default '',
+    metadata text not null default '',
+    sort_order double precision not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
+  create table if not exists study_pending_items (
+    id uuid primary key default gen_random_uuid(),
+    wishlist_id uuid not null references wishlists(id) on delete cascade,
+    module_id uuid references study_modules(id) on delete set null,
+    topic_id uuid references study_topics(id) on delete set null,
+    admin_task_id uuid references admin_tasks(id) on delete set null,
+    title text not null,
+    status text not null default 'pending',
+    priority text,
+    due_at timestamptz,
+    sync_to_tasks boolean not null default false,
+    completed_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
   do $$
   begin
     if exists (
@@ -277,6 +409,76 @@ await sql`
       select 1 from pg_constraint where conname = 'admin_tasks_category_check'
     ) then
       alter table admin_tasks drop constraint admin_tasks_category_check;
+    end if;
+  end
+  $$;
+`;
+
+await sql`
+  do $$
+  begin
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_courses_priority_check'
+    ) then
+      alter table study_courses
+      add constraint study_courses_priority_check
+      check (priority in ('low', 'medium', 'high') or priority is null);
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_modules_priority_check'
+    ) then
+      alter table study_modules
+      add constraint study_modules_priority_check
+      check (priority in ('low', 'medium', 'high') or priority is null);
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_topics_status_check'
+    ) then
+      alter table study_topics
+      add constraint study_topics_status_check
+      check (status in ('not_started', 'in_progress', 'done'));
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_topics_priority_check'
+    ) then
+      alter table study_topics
+      add constraint study_topics_priority_check
+      check (priority in ('low', 'medium', 'high') or priority is null);
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_materials_type_check'
+    ) then
+      alter table study_materials
+      add constraint study_materials_type_check
+      check (type in ('link', 'image', 'file_reference', 'reference'));
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_materials_owner_check'
+    ) then
+      alter table study_materials
+      add constraint study_materials_owner_check
+      check (module_id is not null or topic_id is not null);
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_pending_items_status_check'
+    ) then
+      alter table study_pending_items
+      add constraint study_pending_items_status_check
+      check (status in ('pending', 'in_progress', 'done'));
+    end if;
+
+    if not exists (
+      select 1 from pg_constraint where conname = 'study_pending_items_priority_check'
+    ) then
+      alter table study_pending_items
+      add constraint study_pending_items_priority_check
+      check (priority in ('low', 'medium', 'high') or priority is null);
     end if;
   end
   $$;
@@ -527,6 +729,45 @@ await sql`
 await sql`
   create index if not exists page_settings_wishlist_page_idx
   on page_settings (wishlist_id, page_key)
+`;
+
+await sql`
+  create index if not exists study_courses_wishlist_order_idx
+  on study_courses (wishlist_id, sort_order asc, created_at desc)
+`;
+
+await sql`
+  drop index if exists study_modules_wishlist_order_idx
+`;
+
+await sql`
+  create index study_modules_wishlist_order_idx
+  on study_modules (wishlist_id, course_id, sort_order asc, created_at desc)
+`;
+
+await sql`
+  create index if not exists study_topics_module_order_idx
+  on study_topics (module_id, sort_order asc, created_at desc)
+`;
+
+await sql`
+  create index if not exists study_topics_wishlist_status_idx
+  on study_topics (wishlist_id, status, due_at)
+`;
+
+await sql`
+  create index if not exists study_materials_topic_order_idx
+  on study_materials (topic_id, sort_order asc, created_at desc)
+`;
+
+await sql`
+  create index if not exists study_materials_module_order_idx
+  on study_materials (module_id, sort_order asc, created_at desc)
+`;
+
+await sql`
+  create index if not exists study_pending_items_wishlist_status_idx
+  on study_pending_items (wishlist_id, status, due_at)
 `;
 
 await sql.end();

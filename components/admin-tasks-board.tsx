@@ -1536,7 +1536,7 @@ export function AdminTasksBoard({
           event.stopPropagation();
           openEditSubtask(parentTask, subtask);
         }}
-        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#dce4f1] bg-[#f8faff] p-3 transition hover:border-[#c6d2e5] hover:bg-white"
+        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#e0e4df] bg-[#fbfbf9] p-3 transition hover:border-[#d4dad2] hover:bg-white"
       >
         <div>
           <h4
@@ -1555,7 +1555,7 @@ export function AdminTasksBoard({
           {settings.showTags ? renderTags(subtask.tags.slice(0, 2)) : null}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-[#e7edf6] pt-3" data-task-interactive>
+        <div className="flex items-center gap-2 border-t border-[#e7eae6] pt-3" data-task-interactive>
           <CommonButton
             type="button"
             onClick={(event) => {
@@ -1598,9 +1598,9 @@ export function AdminTasksBoard({
           </span>
           <span>{progress.percentage}% completas</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-[#e8edf5]">
+        <div className="h-2 overflow-hidden rounded-full bg-[#e6e9e5]">
           <div
-            className="h-full rounded-full bg-[#4f6fad] transition-[width]"
+            className="h-full rounded-full bg-[#6f7c70] transition-[width]"
             style={{ width: `${progress.percentage}%` }}
           />
         </div>
@@ -1616,7 +1616,7 @@ export function AdminTasksBoard({
       <article
         key={subtask.id}
         onClick={() => openEditSubtaskFromForm(subtask)}
-        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#dce4f1] bg-[#f8faff] p-3 transition hover:border-[#c6d2e5] hover:bg-white"
+        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#e0e4df] bg-[#fbfbf9] p-3 transition hover:border-[#d4dad2] hover:bg-white"
       >
         <div>
           <h4
@@ -1635,7 +1635,7 @@ export function AdminTasksBoard({
           {settings.showTags ? renderTags(subtask.tags.slice(0, 2)) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-[#e7edf6] pt-3">
+        <div className="flex items-center justify-between gap-3 border-t border-[#e7eae6] pt-3">
           <span className="text-xs font-medium text-[#65708a]">
             {subtask.status === "done" ? "Concluida" : subtask.status === "in_progress" ? "Em andamento" : "Pendente"}
           </span>
@@ -1698,7 +1698,7 @@ export function AdminTasksBoard({
     return (
       <div
         key={key}
-        className="min-h-[5.5rem] rounded-[22px] border border-dashed border-[#8cc7ff] bg-[#eaf8ff] shadow-[inset_0_0_0_1px_rgba(140,199,255,0.22)] transition-all duration-200"
+        className="min-h-[5.5rem] rounded-[22px] border border-dashed border-[#cfd8cd] bg-[#eef1ee] shadow-[inset_0_0_0_1px_rgba(207,216,205,0.32)] transition-all duration-200"
         aria-hidden="true"
       />
     );
@@ -1767,11 +1767,11 @@ export function AdminTasksBoard({
           openEdit(task);
         }}
         className={cx(
-          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#c8d3e6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2",
+          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#e0e4df] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2",
           canReorderTasks && "cursor-grab active:cursor-grabbing",
-          isPressed && "border-[#cbd8f1] shadow-[0_10px_24px_rgba(49,89,199,0.12)]",
-          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#93a6d3] opacity-60 shadow-[0_16px_32px_rgba(35,48,72,0.16)]",
-          isGrabbed && dragMode === "keyboard" && "border-[#93a6d3] opacity-90 shadow-[0_18px_34px_rgba(35,48,72,0.18)]",
+          isPressed && "border-[#cbd5ca] shadow-[0_10px_24px_rgba(35,44,36,0.1)]",
+          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#aeb9ad] opacity-60 shadow-[0_16px_32px_rgba(35,44,36,0.14)]",
+          isGrabbed && dragMode === "keyboard" && "border-[#aeb9ad] opacity-90 shadow-[0_18px_34px_rgba(35,44,36,0.16)]",
         )}
         data-reorder-disabled={isReorderDisabled}
       >
@@ -1806,7 +1806,7 @@ export function AdminTasksBoard({
         {renderSubtasks(task, subtasks)}
 
         {!hasSubtasks ? (
-          <div className="mt-auto flex items-center gap-2 border-t border-[#edf1f7] pt-3">
+          <div className="mt-auto flex items-center gap-2 border-t border-[#e8ebe7] pt-3">
             <CommonButton
               type="button"
               onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
@@ -1872,11 +1872,11 @@ export function AdminTasksBoard({
           openEdit(task);
         }}
         className={cx(
-          "group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#dde4ef] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#c8d3e6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ea1cc] focus-visible:ring-offset-2 sm:flex-row sm:items-start sm:justify-between",
+          "group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#e0e4df] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2 sm:flex-row sm:items-start sm:justify-between",
           canReorderTasks && "cursor-grab active:cursor-grabbing",
-          isPressed && "border-[#cbd8f1] shadow-[0_10px_24px_rgba(49,89,199,0.12)]",
-          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#93a6d3] opacity-60 shadow-[0_16px_32px_rgba(35,48,72,0.16)]",
-          isGrabbed && dragMode === "keyboard" && "border-[#93a6d3] opacity-90 shadow-[0_18px_34px_rgba(35,48,72,0.18)]",
+          isPressed && "border-[#cbd5ca] shadow-[0_10px_24px_rgba(35,44,36,0.1)]",
+          isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#aeb9ad] opacity-60 shadow-[0_16px_32px_rgba(35,44,36,0.14)]",
+          isGrabbed && dragMode === "keyboard" && "border-[#aeb9ad] opacity-90 shadow-[0_18px_34px_rgba(35,44,36,0.16)]",
         )}
       >
         <div className="min-w-0 flex-1 space-y-3">
@@ -2347,11 +2347,11 @@ export function AdminTasksBoard({
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-[24px] border border-[#dbe1ed] bg-white px-4 py-8 text-center text-sm text-[#667086]">
+        <div className="rounded-[24px] border border-[#e0e4df] bg-white px-4 py-8 text-center text-sm text-[#667068]">
           Carregando tarefas...
         </div>
       ) : filteredAndSortedTasks.length === 0 ? (
-        <div className="rounded-[24px] border border-[#dbe1ed] bg-white px-4 py-8 text-center">
+        <div className="rounded-[24px] border border-[#e0e4df] bg-white px-4 py-8 text-center">
           <p className="text-sm text-[#1f2b46]">Nenhuma tarefa encontrada.</p>
           <p className="mt-1 text-sm text-[#6d768d]">Ajuste a busca, os filtros ou crie uma nova tarefa.</p>
         </div>
@@ -2362,12 +2362,12 @@ export function AdminTasksBoard({
               key={column.status}
               onDragOver={(event) => onColumnDragOver(event, column.status)}
               onDrop={(event) => onTaskDrop(event, dropTarget ?? getAppendDropTarget(column.status))}
-              className="rounded-[28px] border border-[#dde3ef] bg-[#f5f7fb] p-3"
+              className="rounded-[28px] border border-[#e0e4df] bg-[#f6f7f6] p-3"
             >
               <header className="mb-3 flex items-center gap-2 px-1">
-                <span className="text-[#7c86a0]">{statusIcon(column.status, "h-4 w-4")}</span>
-                <h4 className="text-[1rem] text-[#20293d]">{column.label}</h4>
-                <span className="text-sm text-[#7d869b]">{column.tasks.length}</span>
+                <span className="text-[#747d75]">{statusIcon(column.status, "h-4 w-4")}</span>
+                <h4 className="text-[1rem] text-[#202720]">{column.label}</h4>
+                <span className="text-sm text-[#7b847d]">{column.tasks.length}</span>
                 <IconButton
                   type="button"
                   onClick={() => openCreate(column.status)}
@@ -2385,7 +2385,7 @@ export function AdminTasksBoard({
                   ? renderDropZone(`drop-empty-${column.status}`)
                   : null}
                 {column.tasks.length === 0 ? (
-                  <div className="rounded-[20px] bg-white px-4 py-4 text-sm text-[#7b849a]">
+                  <div className="rounded-[20px] bg-white px-4 py-4 text-sm text-[#7b837c]">
                     Nenhuma tarefa nesta etapa.
                   </div>
                 ) : (

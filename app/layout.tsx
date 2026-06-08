@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Raleway } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 
 import "@/app/globals.css";
 
-const raleway = Raleway({
+const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-raleway",
+  variable: "--font-plus-jakarta-sans",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body className={raleway.variable}>{children}</body>
+      <body className={`${plusJakartaSans.variable} ${plusJakartaSans.className}`}>{children}</body>
     </html>
   );
 }

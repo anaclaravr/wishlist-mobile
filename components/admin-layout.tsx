@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Home, Settings2, Users, LayoutPanelTop, Gift, CheckSquare, Briefcase } from "lucide-react";
+import { BookOpen, Home, Settings2, Users, LayoutPanelTop, Gift, CheckSquare, Briefcase } from "lucide-react";
 
 import type { Wishlist } from "@/lib/db";
 import { WishlistSidebar } from "@/components/wishlist-sidebar";
@@ -9,6 +9,7 @@ import { Breadcrumb, type BreadcrumbItem } from "@/components/ui/breadcrumb";
 
 type AdminActivePage =
   | "tasks"
+  | "studies"
   | "admin"
   | "admin-users"
   | "admin-pages"
@@ -53,6 +54,10 @@ export function AdminLayout({
         { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },
         { label: "Tarefas", icon: <Briefcase aria-hidden="true" /> },
       ],
+      studies: [
+        { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },
+        { label: "Estudos", icon: <BookOpen aria-hidden="true" /> },
+      ],
       admin: [
         { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },
         { label: "Admin", icon: <Settings2 aria-hidden="true" /> },
@@ -93,7 +98,7 @@ export function AdminLayout({
     } satisfies Record<AdminActivePage, BreadcrumbItem[]>)[activePage];
 
   return (
-    <main className="min-h-screen">
+    <main className="ds-app-shell min-h-screen">
       <div
         className={`grid min-h-screen transition-[grid-template-columns] duration-300 ${
           isSidebarCollapsed ? "lg:grid-cols-[92px_1fr]" : "lg:grid-cols-[272px_1fr]"
@@ -105,7 +110,9 @@ export function AdminLayout({
           avatarUrl={wishlist.ownerAvatarUrl}
           wishlistHref={wishlistHref}
           tasksHref="/tasks"
+          studiesHref="/studies"
           showTasks
+          showStudies
           adminHref="/admin"
           onLogout={handleLogout}
           activePage={activePage}
@@ -113,7 +120,7 @@ export function AdminLayout({
           setIsCollapsed={setIsSidebarCollapsed}
         />
 
-        <section className="bg-[#f8f9fd] p-4 sm:p-6">
+        <section className="ds-app-panel p-4 sm:p-6">
           <header className={compactHeader ? "mb-2" : "mb-4"}>
             <Breadcrumb items={resolvedBreadcrumbItems} className="mb-1" />
             <h2 className={`mt-1 font-semibold text-[#141a27] ${compactHeader ? "text-[24px]" : "text-[30px]"}`}>

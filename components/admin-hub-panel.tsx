@@ -210,7 +210,7 @@ export function AdminHubPanel({
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="ds-app-shell min-h-screen">
       <div
         className={`grid min-h-screen transition-[grid-template-columns] duration-300 ${
           isSidebarCollapsed ? "lg:grid-cols-[92px_1fr]" : "lg:grid-cols-[272px_1fr]"
@@ -227,7 +227,7 @@ export function AdminHubPanel({
           setIsCollapsed={setIsSidebarCollapsed}
         />
 
-        <section className="bg-[#f8f9fd] p-4 sm:p-6">
+        <section className="ds-app-panel p-4 sm:p-6">
           <header className="mb-4">
             <p className="text-[11px] font-medium uppercase text-[#7c8399]">Governanca</p>
             <h2 className="mt-1 text-[30px] font-semibold text-[#141a27]">Admin Hub</h2>
