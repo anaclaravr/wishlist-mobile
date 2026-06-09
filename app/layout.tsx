@@ -10,8 +10,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Wishlist compartilhavel",
-  description: "Wishlist mobile-first com link publico, acompanhamento e alertas por e-mail.",
+  title: "Workspace",
+  description: "Workspace pessoal para wishlist, tarefas, estudos e organizacao.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

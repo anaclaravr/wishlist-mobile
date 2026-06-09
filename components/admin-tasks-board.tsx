@@ -1170,46 +1170,6 @@ export function AdminTasksBoard({
     }));
   }
 
-  async function setSubtaskStatus(parentTask: AdminTask, subtask: TaskSubtask, status: AdminTaskStatus) {
-    if (subtask.status === status || pendingAction === `subtask-status:${subtask.id}`) {
-      return;
-    }
-
-    setPendingAction(`subtask-status:${subtask.id}`);
-    setError(null);
-    try {
-      const parentForm = taskToForm(parentTask);
-      const now = new Date().toISOString();
-      const nextParentForm = {
-        ...parentForm,
-        subtasks: parentForm.subtasks.map((item) =>
-          item.id === subtask.id
-            ? {
-                ...item,
-                status,
-                updatedAt: now,
-                completedAt: status === "done" ? item.completedAt ?? now : null,
-              }
-            : item,
-        ),
-      };
-      const response = await fetch(`/api/admin/tasks/${parentTask.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createTaskPayload(nextParentForm)),
-      });
-      const result = (await response.json()) as { task?: AdminTask; error?: string };
-      if (!response.ok || !result.task) {
-        throw new Error(result.error ?? "Nao foi possivel atualizar a subtask.");
-      }
-      setTasks((current) => current.map((item) => (item.id === parentTask.id ? result.task! : item)));
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
   function getColumnTasksForDrop(status: AdminTaskStatus) {
     return groupedTasks[status].filter((task) => task.id !== draggingTaskId);
   }
@@ -1525,8 +1485,6 @@ export function AdminTasksBoard({
   }
 
   function renderSubtaskCard(parentTask: AdminTask, subtask: TaskSubtask) {
-    const isStatusPending = pendingAction === `subtask-status:${subtask.id}`;
-
     return (
       <article
         key={subtask.id}
@@ -1536,12 +1494,12 @@ export function AdminTasksBoard({
           event.stopPropagation();
           openEditSubtask(parentTask, subtask);
         }}
-        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#e0e4df] bg-[#fbfbf9] p-3 transition hover:border-[#d4dad2] hover:bg-white"
+        className="flex cursor-pointer flex-col gap-2.5 rounded-[14px] border border-[#e0e4df] bg-[#fbfbf9] p-2.5 transition hover:border-[#d4dad2] hover:bg-white"
       >
         <div>
           <h4
             className={cx(
-              "line-clamp-2 text-[1rem] leading-6 text-[#161d2c]",
+              "line-clamp-2 text-[0.92rem] leading-5 text-[#161d2c]",
               subtask.status === "done" && "text-[#7e8798] line-through",
             )}
           >
@@ -1553,32 +1511,6 @@ export function AdminTasksBoard({
           {priorityChip(subtask.priority)}
           {dueChip(subtask.dueAt)}
           {settings.showTags ? renderTags(subtask.tags.slice(0, 2)) : null}
-        </div>
-
-        <div className="flex items-center gap-2 border-t border-[#e7eae6] pt-3" data-task-interactive>
-          <CommonButton
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void setSubtaskStatus(parentTask, subtask, subtask.status === "done" ? "pending" : "done");
-            }}
-            variant="secondary"
-            usage={subtask.status === "done" ? "general" : "info"}
-            showIconLeft
-            iconLeft={
-              isStatusPending ? (
-                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              ) : subtask.status === "done" ? (
-                <Circle aria-hidden="true" className="h-4 w-4" />
-              ) : (
-                <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-              )
-            }
-            className="h-9 flex-1 justify-center text-sm"
-            title={subtask.status === "done" ? `Reabrir ${subtask.title}` : `Concluir ${subtask.title}`}
-          >
-            {subtask.status === "done" ? "Reabrir" : "Concluir"}
-          </CommonButton>
         </div>
       </article>
     );
@@ -1616,12 +1548,12 @@ export function AdminTasksBoard({
       <article
         key={subtask.id}
         onClick={() => openEditSubtaskFromForm(subtask)}
-        className="flex cursor-pointer flex-col gap-3 rounded-[16px] border border-[#e0e4df] bg-[#fbfbf9] p-3 transition hover:border-[#d4dad2] hover:bg-white"
+        className="flex cursor-pointer flex-col gap-2.5 rounded-[14px] border border-[#e0e4df] bg-[#fbfbf9] p-2.5 transition hover:border-[#d4dad2] hover:bg-white"
       >
         <div>
           <h4
             className={cx(
-              "line-clamp-2 text-[1rem] leading-6 text-[#161d2c]",
+              "line-clamp-2 text-[0.92rem] leading-5 text-[#161d2c]",
               subtask.status === "done" && "text-[#7e8798] line-through",
             )}
           >
@@ -1698,7 +1630,7 @@ export function AdminTasksBoard({
     return (
       <div
         key={key}
-        className="min-h-[5.5rem] rounded-[22px] border border-dashed border-[#cfd8cd] bg-[#eef1ee] shadow-[inset_0_0_0_1px_rgba(207,216,205,0.32)] transition-all duration-200"
+        className="min-h-[4.75rem] rounded-[18px] border border-dashed border-[#2f6fe4] bg-[#eaf2ff] shadow-[inset_0_0_0_1px_rgba(47,111,228,0.2)] transition-all duration-200"
         aria-hidden="true"
       />
     );
@@ -1720,7 +1652,7 @@ export function AdminTasksBoard({
   function renderTaskCollection(taskList: AdminTask[], variant: ViewMode) {
     const renderer = variant === "board" ? renderTaskCard : renderTaskListItem;
     return taskList.map((task) => (
-      <div key={task.id} className="space-y-3">
+      <div key={task.id} className="space-y-2.5">
         {shouldRenderDropBefore(task) ? renderDropZone(`drop-before-${task.id}`) : null}
         {renderer(task)}
         {shouldRenderDropAfter(task) ? renderDropZone(`drop-after-${task.id}`) : null}
@@ -1729,9 +1661,7 @@ export function AdminTasksBoard({
   }
 
   function renderTaskCard(task: AdminTask) {
-    const isStatusPending = pendingAction === `status:${task.id}`;
     const subtasks = deserializeTaskSubtasks(task.notes);
-    const hasSubtasks = getSubtaskProgress(subtasks).total > 0;
     const isGrabbed = draggingTaskId === task.id;
     const isPressed = pressedTaskId === task.id;
     const isReorderDisabled = !canReorderTasks;
@@ -1767,7 +1697,7 @@ export function AdminTasksBoard({
           openEdit(task);
         }}
         className={cx(
-          "group flex cursor-pointer flex-col gap-3 rounded-[28px] border border-[#e0e4df] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2",
+          "group flex cursor-pointer flex-col gap-2.5 rounded-[22px] border border-[#e0e4df] bg-white p-3 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2",
           canReorderTasks && "cursor-grab active:cursor-grabbing",
           isPressed && "border-[#cbd5ca] shadow-[0_10px_24px_rgba(35,44,36,0.1)]",
           isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#aeb9ad] opacity-60 shadow-[0_16px_32px_rgba(35,44,36,0.14)]",
@@ -1777,7 +1707,7 @@ export function AdminTasksBoard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-2">
-            <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
+            <h3 className={cx("text-[1.02rem] leading-6 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
               {task.title || "Sem titulo"}
             </h3>
             {renderTaskDates(task)}
@@ -1804,40 +1734,12 @@ export function AdminTasksBoard({
         </div>
 
         {renderSubtasks(task, subtasks)}
-
-        {!hasSubtasks ? (
-          <div className="mt-auto flex items-center gap-2 border-t border-[#e8ebe7] pt-3">
-            <CommonButton
-              type="button"
-              onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
-              variant="secondary"
-              usage={task.status === "done" ? "general" : "info"}
-              showIconLeft
-              iconLeft={
-                isStatusPending ? (
-                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-                ) : task.status === "done" ? (
-                  <Circle aria-hidden="true" className="h-4 w-4" />
-                ) : (
-                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-                )
-              }
-              className="h-10 flex-1 justify-center"
-              title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
-              data-task-interactive
-            >
-              {task.status === "done" ? "Reabrir" : "Concluir"}
-            </CommonButton>
-          </div>
-        ) : null}
       </article>
     );
   }
 
   function renderTaskListItem(task: AdminTask) {
-    const isStatusPending = pendingAction === `status:${task.id}`;
     const subtasks = deserializeTaskSubtasks(task.notes);
-    const hasSubtasks = getSubtaskProgress(subtasks).total > 0;
     const isGrabbed = draggingTaskId === task.id;
     const isPressed = pressedTaskId === task.id;
 
@@ -1872,7 +1774,7 @@ export function AdminTasksBoard({
           openEdit(task);
         }}
         className={cx(
-          "group flex cursor-pointer flex-col gap-3 rounded-[24px] border border-[#e0e4df] bg-white p-4 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2 sm:flex-row sm:items-start sm:justify-between",
+          "group flex cursor-pointer flex-col gap-2.5 rounded-[22px] border border-[#e0e4df] bg-white p-3 shadow-[var(--ds-shadow-soft)] transition-all duration-200 hover:border-[#d3d9d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f9a8b] focus-visible:ring-offset-2 sm:flex-row sm:items-start sm:justify-between",
           canReorderTasks && "cursor-grab active:cursor-grabbing",
           isPressed && "border-[#cbd5ca] shadow-[0_10px_24px_rgba(35,44,36,0.1)]",
           isGrabbed && dragMode === "pointer" && "cursor-grabbing border-[#aeb9ad] opacity-60 shadow-[0_16px_32px_rgba(35,44,36,0.14)]",
@@ -1881,7 +1783,7 @@ export function AdminTasksBoard({
       >
         <div className="min-w-0 flex-1 space-y-3">
           <div className="min-w-0 space-y-2">
-            <h3 className={cx("text-[1.15rem] leading-7 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
+            <h3 className={cx("text-[1.02rem] leading-6 text-[#141a27]", task.status === "done" && "text-[#7e8798] line-through")}>
               {task.title || "Sem titulo"}
             </h3>
             {renderTaskDates(task)}
@@ -1898,29 +1800,6 @@ export function AdminTasksBoard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2" data-task-interactive>
-          {!hasSubtasks ? (
-            <CommonButton
-              type="button"
-              onClick={() => void setTaskStatus(task, task.status === "done" ? "pending" : "done")}
-              variant="secondary"
-              usage={task.status === "done" ? "general" : "info"}
-              showIconLeft
-              iconLeft={
-                isStatusPending ? (
-                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-                ) : task.status === "done" ? (
-                  <Circle aria-hidden="true" className="h-4 w-4" />
-                ) : (
-                  <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-                )
-              }
-              className="h-10 whitespace-nowrap px-4"
-              title={task.status === "done" ? `Reabrir ${task.title}` : `Concluir ${task.title}`}
-            >
-              {task.status === "done" ? "Reabrir" : "Concluir"}
-            </CommonButton>
-          ) : null}
-
           <MenuIconButton
             ariaLabel={`Abrir acoes de ${task.title || "tarefa"}`}
             tooltip
@@ -2356,17 +2235,17 @@ export function AdminTasksBoard({
           <p className="mt-1 text-sm text-[#6d768d]">Ajuste a busca, os filtros ou crie uma nova tarefa.</p>
         </div>
       ) : viewMode === "board" ? (
-        <div className={cx("grid gap-4", boardColumns.length === 1 ? "grid-cols-1" : "lg:grid-cols-3 lg:items-start")}>
+        <div className={cx("grid max-w-[54rem] gap-3", boardColumns.length === 1 ? "grid-cols-1" : "lg:grid-cols-3 lg:items-start")}>
           {boardColumns.map((column) => (
             <section
               key={column.status}
               onDragOver={(event) => onColumnDragOver(event, column.status)}
               onDrop={(event) => onTaskDrop(event, dropTarget ?? getAppendDropTarget(column.status))}
-              className="rounded-[28px] border border-[#e0e4df] bg-[#f6f7f6] p-3"
+              className="rounded-[22px] bg-[#f6f7f6] p-2.5"
             >
-              <header className="mb-3 flex items-center gap-2 px-1">
+              <header className="mb-2.5 flex items-center gap-2 px-1">
                 <span className="text-[#747d75]">{statusIcon(column.status, "h-4 w-4")}</span>
-                <h4 className="text-[1rem] text-[#202720]">{column.label}</h4>
+                <h4 className="text-[0.92rem] text-[#202720]">{column.label}</h4>
                 <span className="text-sm text-[#7b847d]">{column.tasks.length}</span>
                 <IconButton
                   type="button"
@@ -2380,12 +2259,12 @@ export function AdminTasksBoard({
                 </IconButton>
               </header>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {dropTarget?.status === column.status && dropTarget.beforeId === null && dropTarget.afterId === null
                   ? renderDropZone(`drop-empty-${column.status}`)
                   : null}
                 {column.tasks.length === 0 ? (
-                  <div className="rounded-[20px] bg-white px-4 py-4 text-sm text-[#7b837c]">
+                  <div className="rounded-[18px] bg-white px-3.5 py-3 text-sm text-[#7b837c]">
                     Nenhuma tarefa nesta etapa.
                   </div>
                 ) : (
