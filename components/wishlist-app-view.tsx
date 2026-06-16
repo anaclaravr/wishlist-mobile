@@ -126,6 +126,7 @@ type AutoFillField = "name" | "imageUrl" | "price";
 type AutoFillTouchedFields = Record<AutoFillField, boolean>;
 
 type AvailabilityFilter = "todos" | "disponiveis" | "adquiridos";
+type WishlistTab = "todos" | "adquiridos" | "favoritos" | "meus-itens";
 type PriorityFilter = "todas" | WishlistItemPriority;
 type RepurchaseFilter = "todas" | ItemRepurchaseState;
 type SortMode = "recentes" | "prioridade" | "preco-menor" | "preco-maior";
@@ -419,7 +420,7 @@ export function WishlistAppView({
   const [items, setItems] = useState(data.items);
   const [personalItems, setPersonalItems] = useState<PersonalItem[]>([]);
   const [favoriteItemIds, setFavoriteItemIds] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"todos" | "favoritos" | "meus-itens">("todos");
+  const [activeTab, setActiveTab] = useState<WishlistTab>("todos");
   const [query, setQuery] = useState("");
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilterState);
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilterState);
@@ -467,6 +468,8 @@ export function WishlistAppView({
   }
   const canManageFavorites = can("wishlist.favorites.manage");
   const canManagePersonal = can("wishlist.personal.create") || can("wishlist.personal.edit");
+  const showAdminAcquiredTab = access.role === "admin";
+  const showAvailabilityFilter = activeTab !== "meus-itens" && !showAdminAcquiredTab;
 
   useEffect(() => {
     async function loadExtras() {
@@ -521,10 +524,15 @@ export function WishlistAppView({
       return;
     }
 
+    if (activeTab === "adquiridos" && !showAdminAcquiredTab) {
+      setActiveTab("todos");
+      return;
+    }
+
     if (activeTab === "meus-itens" && !canManagePersonal) {
       setActiveTab("todos");
     }
-  }, [activeTab, canManageFavorites, canManagePersonal]);
+  }, [activeTab, canManageFavorites, canManagePersonal, showAdminAcquiredTab]);
 
   const favoriteBaseItems = useMemo(
     () => items.filter((item) => favoriteItemIds.has(item.id)),
@@ -548,11 +556,16 @@ export function WishlistAppView({
     if (activeTab === "meus-itens") {
       return personalQueryItems;
     }
+    if (activeTab === "adquiridos") {
+      return officialQueryItems.filter((item) => Boolean(item.acquiredAt));
+    }
     if (activeTab === "favoritos") {
       return favoriteQueryItems;
     }
-    return officialQueryItems;
-  }, [activeTab, favoriteQueryItems, officialQueryItems, personalQueryItems]);
+    return showAdminAcquiredTab
+      ? officialQueryItems.filter((item) => !item.acquiredAt)
+      : officialQueryItems;
+  }, [activeTab, favoriteQueryItems, officialQueryItems, personalQueryItems, showAdminAcquiredTab]);
 
   const categories = useMemo(
     () =>
@@ -603,7 +616,7 @@ export function WishlistAppView({
   }, [appliedFilters.category, categories]);
 
   useEffect(() => {
-    if (activeTab !== "meus-itens") {
+    if (showAvailabilityFilter) {
       return;
     }
 
@@ -611,7 +624,7 @@ export function WishlistAppView({
       setAppliedFilters((current) => ({ ...current, availability: "todos" }));
       setDraftFilters((current) => ({ ...current, availability: "todos" }));
     }
-  }, [activeTab, appliedFilters.availability, draftFilters.availability]);
+  }, [appliedFilters.availability, draftFilters.availability, showAvailabilityFilter]);
 
   function appendCustomCategoryOption(value: string) {
     const trimmed = value.trim();
@@ -635,13 +648,18 @@ export function WishlistAppView({
     );
   }
 
-  function matchesOfficialFilters(item: WishlistItem, filters: FilterState) {
+  function matchesOfficialFilters(
+    item: WishlistItem,
+    filters: FilterState,
+    availabilityOverride?: AvailabilityFilter,
+  ) {
     const matchesCategory = filters.category === "Todas" || item.category === filters.category;
     const matchesPriority = filters.priority === "todas" || item.priority === filters.priority;
+    const availability = availabilityOverride ?? filters.availability;
     const matchesAvailability =
-      filters.availability === "todos" ||
-      (filters.availability === "disponiveis" && !item.acquiredAt) ||
-      (filters.availability === "adquiridos" && Boolean(item.acquiredAt));
+      availability === "todos" ||
+      (availability === "disponiveis" && !item.acquiredAt) ||
+      (availability === "adquiridos" && Boolean(item.acquiredAt));
     const matchesRepurchase = matchesRepurchaseState(item.repurchaseState, filters.repurchaseState);
 
     return matchesCategory && matchesPriority && matchesAvailability && matchesRepurchase;
@@ -658,7 +676,24 @@ export function WishlistAppView({
   const visibleOfficialItems = useMemo(
     () =>
       sortItemsByMode(
-        officialQueryItems.filter((item) => matchesOfficialFilters(item, appliedFilters)),
+        officialQueryItems.filter((item) =>
+          matchesOfficialFilters(
+            item,
+            appliedFilters,
+            showAdminAcquiredTab ? "disponiveis" : undefined,
+          ),
+        ),
+        appliedFilters.sortMode,
+      ),
+    [appliedFilters, officialQueryItems, showAdminAcquiredTab],
+  );
+
+  const acquiredOfficialItems = useMemo(
+    () =>
+      sortItemsByMode(
+        officialQueryItems.filter((item) =>
+          matchesOfficialFilters(item, appliedFilters, "adquiridos"),
+        ),
         appliedFilters.sortMode,
       ),
     [appliedFilters, officialQueryItems],
@@ -682,7 +717,6 @@ export function WishlistAppView({
     [appliedFilters, personalQueryItems],
   );
 
-  const showAvailabilityFilter = activeTab !== "meus-itens";
   const hasAppliedFilters =
     appliedFilters.category !== defaultFilterState.category ||
     appliedFilters.priority !== defaultFilterState.priority ||
@@ -2641,16 +2675,26 @@ export function WishlistAppView({
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Tabs<"todos" | "favoritos" | "meus-itens">
+              <Tabs<WishlistTab>
                 value={activeTab}
                 onChange={setActiveTab}
                 items={[
                   {
                     id: "todos",
-                    label: "Todos",
+                    label: showAdminAcquiredTab ? "Disponiveis" : "Todos",
                     count: visibleOfficialItems.length,
                     icon: <Layers3 aria-hidden="true" className="h-5 w-5" />,
                   },
+                  ...(showAdminAcquiredTab
+                    ? [
+                        {
+                          id: "adquiridos" as const,
+                          label: "Adquiridos",
+                          count: acquiredOfficialItems.length,
+                          icon: <ShoppingCart aria-hidden="true" className="h-5 w-5" />,
+                        },
+                      ]
+                    : []),
                   ...(canManageFavorites
                     ? [
                         {
@@ -2907,6 +2951,17 @@ export function WishlistAppView({
               ) : (
                 <div className="space-y-3">
                   {favoriteItems.map((item) => renderOfficialListItem(item))}
+                </div>
+              )
+            ) : null}
+            {activeTab === "adquiridos" ? (
+              viewMode === "cards" ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {acquiredOfficialItems.map((item) => renderOfficialCard(item))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {acquiredOfficialItems.map((item) => renderOfficialListItem(item))}
                 </div>
               )
             ) : null}
