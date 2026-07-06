@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const follower = await getFollowerByToken({ slug, followToken });
 
     if (!follower) {
-      throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
+      throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
     }
 
     return NextResponse.json({

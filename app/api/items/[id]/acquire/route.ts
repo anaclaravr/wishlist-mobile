@@ -19,7 +19,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const parsed = acquireSchema.safeParse(body);
 
     if (!parsed.success) {
-      throw new PublicError("Acompanhe a wishlist antes de marcar como adquirido.", 401);
+      throw new PublicError("Acompanhe o workspace antes de marcar como adquirido.", 401);
     }
 
     const { id } = await context.params;
@@ -53,7 +53,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     const parsed = acquireSchema.safeParse(body);
 
     if (!parsed.success) {
-      throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 401);
+      throw new PublicError("Acompanhamento nao encontrado para este workspace.", 401);
     }
 
     const { id } = await context.params;

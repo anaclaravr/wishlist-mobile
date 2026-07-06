@@ -11,7 +11,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: "Workspace",
-  description: "Workspace pessoal para wishlist, tarefas, estudos e organizacao.",
+  description: "Workspace pessoal para itens, tarefas, estudos e organizacao.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

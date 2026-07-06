@@ -18,8 +18,8 @@ export default async function AdminWishlistPage() {
       wishlist={data.hub.wishlist}
       wishlistHref={data.wishlistHref}
       activePage="admin-pages-wishlist"
-      title="Wishlist"
-      description="Configure a pagina Wishlist e acompanhe sugestoes publicas."
+      title="Workspace"
+      description="Configure a pagina Workspace e acompanhe sugestoes publicas."
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <WishlistSettingsForm wishlist={data.hub.wishlist} />

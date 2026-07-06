@@ -24,7 +24,7 @@ function WishlistSetupError({
           <AlertCircle aria-hidden="true" className="h-6 w-6" />
           </div>
           <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#8a92a7]">
-            Wishlist
+            Workspace
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">{title}</h1>
           <p className="mt-3 text-sm leading-6 text-[#666f85]">{description}</p>
@@ -40,8 +40,8 @@ export default async function HomePage() {
   if (!slug) {
     return (
       <WishlistSetupError
-        title="Configure a wishlist principal"
-        description="Defina WISHLIST_SLUG no ambiente com o slug da sua wishlist para que a pagina inicial mostre a lista publica."
+        title="Configure o workspace principal"
+        description="Defina WISHLIST_SLUG no ambiente com o slug do workspace para que a pagina inicial mostre a lista publica."
       />
     );
   }
@@ -57,8 +57,8 @@ export default async function HomePage() {
   if (!data) {
     return (
       <WishlistSetupError
-        title="Wishlist nao encontrada"
-        description={`Nao encontramos uma wishlist com o slug "${slug}". Confira WISHLIST_SLUG ou crie essa wishlist no banco.`}
+        title="Workspace nao encontrado"
+        description={`Nao encontramos um workspace com o slug "${slug}". Confira WISHLIST_SLUG ou crie esse workspace no banco.`}
       />
     );
   }

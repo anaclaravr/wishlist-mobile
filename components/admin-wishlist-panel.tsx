@@ -617,7 +617,7 @@ export function AdminWishlistPanel({
         }`}
       >
         <WishlistSidebar
-          title={data.wishlist.ownerName || "Perfil da wishlist"}
+          title={data.wishlist.ownerName || "Perfil do workspace"}
           subtitle={data.wishlist.ownerEmail || "Sem e-mail configurado"}
           avatarUrl={data.wishlist.ownerAvatarUrl}
           wishlistHref={publicPath}
@@ -631,7 +631,7 @@ export function AdminWishlistPanel({
           <header className="border-b border-[#dee4ef] px-4 py-5 sm:px-6 sm:py-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <p className="text-[11px] font-medium uppercase text-[#7c8399]">Gestao da wishlist</p>
+                <p className="text-[11px] font-medium uppercase text-[#7c8399]">Gestao do workspace</p>
                 <h2 className="mt-1 text-[30px] font-semibold text-[#141a27]">Itens</h2>
                 <p className="mt-2 text-sm text-[#6c7489]">
                   {activeItems.length} ativo(s) · {archivedItems.length} arquivado(s) ·{" "}

@@ -23,13 +23,13 @@ export default async function AdminPage({
             </p>
             <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">Link admin invalido</h1>
             <p className="mt-3 text-sm leading-6 text-[#666f85]">
-              O painel de edicao precisa do link secreto da sua wishlist.
+              O painel de edicao precisa do link secreto do seu workspace.
             </p>
             <Link
               href="/"
               className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[#141a28] px-4 text-sm font-medium text-white"
             >
-              Abrir wishlist
+              Abrir workspace
             </Link>
           </div>
         </div>

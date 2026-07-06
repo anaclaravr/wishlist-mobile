@@ -726,7 +726,7 @@ export function WishlistPublicView({
       const result = (await response.json()) as FollowResponse;
 
       if (!response.ok || !result.follower) {
-        throw new Error(result.error ?? "Nao foi possivel acompanhar a wishlist.");
+        throw new Error(result.error ?? "Nao foi possivel acompanhar o workspace.");
       }
 
       window.localStorage.setItem(storageKey, result.follower.followToken);
@@ -871,7 +871,7 @@ export function WishlistPublicView({
     }
 
     if (!follower) {
-      setError("Acompanhe a wishlist para marcar ou desfazer um item.");
+      setError("Acompanhe o workspace para marcar ou desfazer um item.");
       return;
     }
 
@@ -911,7 +911,7 @@ export function WishlistPublicView({
 
   async function toggleFavorite(item: WishlistItem) {
     if (!follower) {
-      setError("Acompanhe a wishlist para favoritar itens.");
+      setError("Acompanhe o workspace para favoritar itens.");
       return;
     }
 
@@ -960,7 +960,7 @@ export function WishlistPublicView({
     event.preventDefault();
 
     if (!follower) {
-      setError("Acompanhe a wishlist para criar seus itens.");
+      setError("Acompanhe o workspace para criar seus itens.");
       return;
     }
 
@@ -1408,7 +1408,7 @@ export function WishlistPublicView({
         }`}
       >
         <WishlistSidebar
-          title={data.wishlist.ownerName || "Perfil da wishlist"}
+          title={data.wishlist.ownerName || "Perfil do workspace"}
           subtitle={data.wishlist.ownerEmail || "Sem e-mail configurado"}
           avatarUrl={data.wishlist.ownerAvatarUrl}
           wishlistHref={canonicalPath}
@@ -1695,7 +1695,7 @@ export function WishlistPublicView({
                         <div>
                           <p className="text-sm font-medium text-[#1f2534]">Preferencias de acompanhamento</p>
                           <p className="mt-0.5 text-xs text-[#6a7288]">
-                            Defina como acompanhar a wishlist.
+                            Defina como acompanhar o workspace.
                           </p>
                         </div>
                       </div>
@@ -1703,7 +1703,7 @@ export function WishlistPublicView({
                       <div className="mt-3 space-y-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-[#1f2534]">Acompanhar wishlist</p>
+                            <p className="text-sm font-medium text-[#1f2534]">Acompanhar workspace</p>
                             <p className="text-xs text-[#6a7288]">
                               Habilita acompanhar, favoritar e receber permissao para interacoes.
                             </p>
@@ -1917,7 +1917,7 @@ export function WishlistPublicView({
               <div className="rounded-2xl border border-dashed border-[#ccd5e7] bg-white px-4 py-10 text-center">
                 <Pencil aria-hidden="true" className="mx-auto h-6 w-6 text-[#48628d]" />
                 <p className="mt-2 text-sm font-medium text-[#6e778f]">
-                  Acompanhe a wishlist para criar seus itens pessoais.
+                  Acompanhe o workspace para criar seus itens pessoais.
                 </p>
               </div>
             ) : null}

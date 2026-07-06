@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     if (slug && slug !== session.wishlistSlug) {
       return NextResponse.json(
-        { authenticated: false, error: "Sessao valida para outra wishlist." },
+        { authenticated: false, error: "Sessao valida para outro workspace." },
         { status: 403 },
       );
     }

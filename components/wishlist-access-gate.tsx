@@ -8,7 +8,7 @@ import { CommonButton } from "@/components/ui/button-system";
 export function WishlistAccessGate({
   slug,
   title = "Acesso restrito",
-  description = "Informe sua chave para visualizar esta wishlist.",
+  description = "Informe sua chave para visualizar este workspace.",
 }: {
   slug: string;
   title?: string;

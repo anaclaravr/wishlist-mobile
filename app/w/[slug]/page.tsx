@@ -27,15 +27,15 @@ export default async function WishlistPage({ params }: { params: Promise<{ slug:
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8a92a7]">
             Link invalido
             </p>
-            <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">Wishlist nao encontrada</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">Workspace nao encontrado</h1>
             <p className="mt-3 text-sm leading-6 text-[#666f85]">
-              Confira se o link recebido esta completo ou volte para a wishlist principal.
+              Confira se o link recebido esta completo ou volte para o workspace principal.
             </p>
             <Link
               href="/"
               className="mt-5 inline-flex h-11 items-center justify-center rounded-xl bg-[#141a28] px-4 text-sm font-semibold text-white"
             >
-              Abrir wishlist
+              Abrir workspace
             </Link>
           </div>
         </div>

@@ -1185,7 +1185,7 @@ export async function updateWishlistSettingsById(input: {
     `;
 
     if (!row) {
-      throw new PublicError("Wishlist nao encontrada.", 404);
+      throw new PublicError("Workspace nao encontrado.", 404);
     }
 
     return toWishlist(row);
@@ -1212,7 +1212,7 @@ export async function getWishlistAdminTokenById(wishlistId: string) {
   const wishlist = await getWishlistById(sql, wishlistId);
 
   if (!wishlist) {
-    throw new PublicError("Wishlist nao encontrada.", 404);
+    throw new PublicError("Workspace nao encontrado.", 404);
   }
 
   return wishlist.adminToken;
@@ -1281,7 +1281,7 @@ export async function markItemAcquiredByProfile(input: {
     const item = await getItemById(input.wishlistId, input.itemId);
 
     if (!item) {
-      throw new PublicError("Item nao encontrado para esta wishlist.", 404);
+      throw new PublicError("Item nao encontrado para este workspace.", 404);
     }
 
     return item;
@@ -1290,7 +1290,7 @@ export async function markItemAcquiredByProfile(input: {
   const existingItem = await getItemById(input.wishlistId, input.itemId);
 
   if (!existingItem || existingItem.archivedAt) {
-    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
+    throw new PublicError("Item nao encontrado para este workspace.", 404);
   }
 
   if (existingItem.acquiredAt) {
@@ -1339,7 +1339,7 @@ export async function unmarkItemAcquiredByProfile(input: {
     const item = await getItemById(input.wishlistId, input.itemId);
 
     if (!item) {
-      throw new PublicError("Item nao encontrado para esta wishlist.", 404);
+      throw new PublicError("Item nao encontrado para este workspace.", 404);
     }
 
     return item;
@@ -1348,7 +1348,7 @@ export async function unmarkItemAcquiredByProfile(input: {
   const existingItem = await getItemById(input.wishlistId, input.itemId);
 
   if (!existingItem || existingItem.archivedAt) {
-    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
+    throw new PublicError("Item nao encontrado para este workspace.", 404);
   }
 
   if (!existingItem.acquiredAt) {
@@ -1395,7 +1395,7 @@ export async function favoriteWishlistItemByProfile(input: {
   `;
 
   if (!item) {
-    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
+    throw new PublicError("Item nao encontrado para este workspace.", 404);
   }
 
   await sql`
@@ -1649,7 +1649,7 @@ export async function getAdminHubDataByWishlistId(wishlistId: string) {
   const wishlist = await getWishlistById(sql, wishlistId);
 
   if (!wishlist) {
-    throw new PublicError("Wishlist nao encontrada.", 404);
+    throw new PublicError("Workspace nao encontrado.", 404);
   }
 
   const [{ followersCount }] = await sql<{ followersCount: number }[]>`

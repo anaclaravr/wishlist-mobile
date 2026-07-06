@@ -28,7 +28,7 @@ export async function requireAccessSession(input: {
   }
 
   if (input.slug && input.slug !== session.wishlistSlug) {
-    throw new PublicError("Sessao valida para outra wishlist.", 403);
+    throw new PublicError("Sessao valida para outro workspace.", 403);
   }
 
   if (input.role && session.role !== input.role) {

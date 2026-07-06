@@ -29,7 +29,7 @@ export function WishlistSettingsForm({ wishlist }: { wishlist: Wishlist }) {
       }
       setTitle(result.wishlist.title);
       setSlug(result.wishlist.slug);
-      setMessage("Configuracoes da wishlist atualizadas.");
+      setMessage("Configuracoes do workspace atualizadas.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
     } finally {
@@ -51,7 +51,7 @@ export function WishlistSettingsForm({ wishlist }: { wishlist: Wishlist }) {
       ) : null}
 
       <article className="rounded-[24px] border border-[#d8deea] bg-white p-4 shadow-[0_14px_30px_rgba(29,38,58,0.08)] sm:p-5">
-        <h3 className="text-[15px] font-semibold text-[#151b28]">Configuracoes da pagina Wishlist</h3>
+        <h3 className="text-[15px] font-semibold text-[#151b28]">Configuracoes da pagina Workspace</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-[11px] font-medium text-[#7a8298]">Titulo</span>
