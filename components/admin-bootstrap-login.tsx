@@ -55,7 +55,7 @@ export function AdminBootstrapLogin({
           <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#8a92a7]">Bootstrap</p>
           <h1 className="mt-2 text-3xl font-semibold text-[#141a27]">Abrindo admin</h1>
           <p className="mt-2 text-sm text-[#666f85]">
-            Validando acesso do workspace <strong>{wishlistTitle}</strong>.
+            Validando acesso da wishlist <strong>{wishlistTitle}</strong>.
           </p>
 
           {error ? (

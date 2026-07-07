@@ -20,7 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const parsed = favoriteSchema.safeParse(body);
 
     if (!parsed.success || (!parsed.data.followToken && !parsed.data.slug)) {
-      throw new PublicError("Acompanhe o workspace para favoritar.", 401);
+      throw new PublicError("Acompanhe a wishlist para favoritar.", 401);
     }
 
     const { id } = await context.params;
@@ -54,7 +54,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     const parsed = favoriteSchema.safeParse(body);
 
     if (!parsed.success || (!parsed.data.followToken && !parsed.data.slug)) {
-      throw new PublicError("Acompanhe o workspace para remover favorito.", 401);
+      throw new PublicError("Acompanhe a wishlist para remover favorito.", 401);
     }
 
     const { id } = await context.params;

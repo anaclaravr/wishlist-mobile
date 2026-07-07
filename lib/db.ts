@@ -570,7 +570,7 @@ export async function updateWishlistItem(input: {
   `;
 
   if (!row) {
-    throw new PublicError("Item nao encontrado para este workspace.", 404);
+    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
   }
 
   return toItem(row);
@@ -617,7 +617,7 @@ export async function archiveWishlistItem(input: {
   `;
 
   if (!row) {
-    throw new PublicError("Item nao encontrado para este workspace.", 404);
+    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
   }
 
   return toItem(row);
@@ -639,7 +639,7 @@ export async function deleteWishlistItem(input: { adminToken: string; itemId: st
   `;
 
   if (!row) {
-    throw new PublicError("Item nao encontrado para este workspace.", 404);
+    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
   }
 
   return row;
@@ -668,7 +668,7 @@ export async function followWishlist(input: { slug: string; email?: string | nul
   const data = await getWishlistDataBySlug(input.slug);
 
   if (!data) {
-    throw new PublicError("Workspace nao encontrado.", 404);
+    throw new PublicError("Wishlist nao encontrada.", 404);
   }
 
   const normalizedEmail = input.email ? normalizeEmail(input.email) : null;
@@ -743,7 +743,7 @@ export async function setFollowerEmail(input: { slug: string; followToken: strin
   `;
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const [existingFollowerByEmail] = await sql<FollowerRow[]>`
@@ -805,7 +805,7 @@ export async function markItemAcquired(input: { itemId: string; followToken: str
   const follower = await getFollowerByTokenOnly(sql, input.followToken);
 
   if (!follower) {
-    throw new PublicError("Acompanhe o workspace antes de marcar como adquirido.", 401);
+    throw new PublicError("Acompanhe a wishlist antes de marcar como adquirido.", 401);
   }
 
   const [updated] = await sql<WishlistItemRow[]>`
@@ -869,7 +869,7 @@ export async function markItemAcquired(input: { itemId: string; followToken: str
     throw new PublicError("Este item ja foi marcado como adquirido.", 409);
   }
 
-  throw new PublicError("Item nao encontrado para este workspace.", 404);
+  throw new PublicError("Item nao encontrado para esta wishlist.", 404);
 }
 
 export async function unmarkItemAcquired(input: { itemId: string; followToken: string }) {
@@ -877,7 +877,7 @@ export async function unmarkItemAcquired(input: { itemId: string; followToken: s
   const follower = await getFollowerByTokenOnly(sql, input.followToken);
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 401);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 401);
   }
 
   const [updated] = await sql<WishlistItemRow[]>`
@@ -938,7 +938,7 @@ export async function unmarkItemAcquired(input: { itemId: string; followToken: s
   `;
 
   if (!existing) {
-    throw new PublicError("Item nao encontrado para este workspace.", 404);
+    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
   }
 
   if (!existing.acquiredAt) {
@@ -953,7 +953,7 @@ export async function listWishlistFavoriteItemIds(input: { slug: string; followT
   const follower = await getFollowerBySlugAndToken(sql, input);
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const rows = await sql<{ wishlistItemId: string }[]>`
@@ -978,7 +978,7 @@ export async function favoriteWishlistItem(input: {
   const follower = await getFollowerBySlugAndToken(sql, input);
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const [item] = await sql<{ id: string }[]>`
@@ -990,7 +990,7 @@ export async function favoriteWishlistItem(input: {
   `;
 
   if (!item) {
-    throw new PublicError("Item nao encontrado para este workspace.", 404);
+    throw new PublicError("Item nao encontrado para esta wishlist.", 404);
   }
 
   await sql`
@@ -1011,7 +1011,7 @@ export async function unfavoriteWishlistItem(input: {
   const follower = await getFollowerBySlugAndToken(sql, input);
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   await sql`
@@ -1029,7 +1029,7 @@ export async function listPersonalItems(input: { slug: string; followToken: stri
   const follower = await getFollowerBySlugAndToken(sql, input);
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const rows = await sql<PersonalItemRow[]>`
@@ -1076,7 +1076,7 @@ export async function addPersonalItem(input: {
   });
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const [row] = await sql<PersonalItemRow[]>`
@@ -1144,7 +1144,7 @@ export async function updatePersonalItem(input: {
   });
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const [row] = await sql<PersonalItemRow[]>`
@@ -1198,7 +1198,7 @@ export async function deletePersonalItem(input: {
   });
 
   if (!follower) {
-    throw new PublicError("Acompanhamento nao encontrado para este workspace.", 404);
+    throw new PublicError("Acompanhamento nao encontrado para esta wishlist.", 404);
   }
 
   const [row] = await sql<{ id: string }[]>`

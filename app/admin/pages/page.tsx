@@ -24,9 +24,9 @@ export default async function AdminPagesHome() {
     >
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <PageModuleCard
-          title="Workspace"
+          title="Wishlist"
           subtitle="Pagina ativa"
-          details="Configura titulo, slug e sugestoes publicas do Workspace."
+          details="Configura titulo, slug e sugestoes publicas da Wishlist."
           icon={Gift}
           href="/admin/pages/wishlist"
         />

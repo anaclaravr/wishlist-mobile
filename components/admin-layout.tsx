@@ -58,7 +58,7 @@ export function AdminLayout({
     }
   }
 
-  const ownerName = wishlist.ownerName || "Perfil do workspace";
+  const ownerName = wishlist.ownerName || "Perfil da wishlist";
   const ownerEmail = wishlist.ownerEmail || "Sem e-mail configurado";
   async function handleLogout() {
     try {
@@ -96,7 +96,7 @@ export function AdminLayout({
         { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },
         { label: "Admin", href: "/admin", icon: <Settings2 aria-hidden="true" /> },
         { label: "Pages", href: "/admin/pages", icon: <LayoutPanelTop aria-hidden="true" /> },
-        { label: "Workspace", icon: <Gift aria-hidden="true" /> },
+        { label: "Wishlist", icon: <Gift aria-hidden="true" /> },
       ],
       "admin-pages-tasks": [
         { label: "Home", href: wishlistHref, icon: <Home aria-hidden="true" /> },

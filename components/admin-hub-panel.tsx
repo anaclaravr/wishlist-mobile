@@ -201,7 +201,7 @@ export function AdminHubPanel({
       setOwnerEmail(result.wishlist.ownerEmail ?? "");
       setOwnerAvatarUrl(result.wishlist.ownerAvatarUrl ?? "");
       setSlug(result.wishlist.slug);
-      setMessage("Configuracoes do workspace atualizadas.");
+      setMessage("Configuracoes da wishlist atualizadas.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
     } finally {
@@ -217,7 +217,7 @@ export function AdminHubPanel({
         }`}
       >
         <WishlistSidebar
-          title={ownerName || wishlist.ownerName || "Perfil do workspace"}
+          title={ownerName || wishlist.ownerName || "Perfil da wishlist"}
           subtitle={ownerEmail || wishlist.ownerEmail || "Sem e-mail configurado"}
           avatarUrl={ownerAvatarUrl || wishlist.ownerAvatarUrl || null}
           wishlistHref={publicPath}
@@ -250,7 +250,7 @@ export function AdminHubPanel({
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
             <section className="space-y-4">
               <article className="rounded-[24px] border border-[#d8deea] bg-white p-4 shadow-[0_14px_30px_rgba(29,38,58,0.08)] sm:p-5">
-                <h3 className="text-[15px] font-semibold text-[#151b28]">Configuracoes do workspace</h3>
+                <h3 className="text-[15px] font-semibold text-[#151b28]">Configuracoes da wishlist</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-[11px] font-medium text-[#7a8298]">Titulo</span>

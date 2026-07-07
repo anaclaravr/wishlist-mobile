@@ -26,7 +26,7 @@ DATABASE_URL="postgresql://..."
 RESEND_API_KEY="re_..."
 EMAIL_FROM="Workspace <workspace@seudominio.com>"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-WISHLIST_SLUG="sua-lista"
+WISHLIST_SLUG="sua-wishlist"
 ```
 
 3. Rode a migracao:
@@ -35,7 +35,7 @@ WISHLIST_SLUG="sua-lista"
 npm run db:migrate
 ```
 
-4. Opcionalmente gere dados de exemplo e use o slug `workspace-demo`:
+4. Opcionalmente gere dados de exemplo e use o slug `wishlist-demo`:
 
 ```bash
 npm run db:seed
@@ -49,7 +49,7 @@ npm run dev
 
 ## Fluxos principais
 
-- `/` mostra o workspace principal configurado pelo slug em `WISHLIST_SLUG`.
+- `/` mostra a wishlist principal configurada em `WISHLIST_SLUG`.
 - `/admin/[adminToken]` adiciona, edita, arquiva, restaura e exclui itens, alem de copiar o link publico.
 - `/w/[slug]` continua funcionando como compatibilidade para links antigos.
 - Visitantes informam e-mail para acompanhar; o token fica salvo no navegador e tambem e enviado por e-mail.
@@ -59,5 +59,5 @@ npm run dev
 ## Deploy na Vercel
 
 Configure as mesmas variaveis de ambiente na Vercel e publique o projeto. Defina
-`NEXT_PUBLIC_APP_URL` com a URL final de producao e `WISHLIST_SLUG` com o slug do workspace que ja
+`NEXT_PUBLIC_APP_URL` com a URL final de producao e `WISHLIST_SLUG` com o slug da wishlist que ja
 existe no Supabase.

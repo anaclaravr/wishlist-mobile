@@ -2467,7 +2467,7 @@ export function WishlistAppView({
         }`}
       >
         <WishlistSidebar
-          title={data.wishlist.ownerName || "Perfil do workspace"}
+          title={data.wishlist.ownerName || "Perfil da wishlist"}
           subtitle={data.wishlist.ownerEmail || "Sem e-mail configurado"}
           avatarUrl={data.wishlist.ownerAvatarUrl}
           wishlistHref={canonicalPath}
@@ -2489,7 +2489,7 @@ export function WishlistAppView({
                 <Breadcrumb
                   items={[
                     { label: "Home", href: "/", icon: <Home aria-hidden="true" /> },
-                    { label: "Workspace", icon: <Layers3 aria-hidden="true" /> },
+                    { label: "Wishlist", icon: <Layers3 aria-hidden="true" /> },
                   ]}
                 />
                 <h2 className="mt-1 text-3xl font-semibold text-[#141a27]">{data.wishlist.title}</h2>

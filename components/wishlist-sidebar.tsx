@@ -220,9 +220,9 @@ export function WishlistSidebar({
             <p className="px-2 text-[11px] font-medium uppercase text-[var(--ds-sidebar-section-title)]">Workspace</p>
           ) : null}
           <div className="mt-2 space-y-1">
-            <a href={wishlistHref} className={topLevelItemClass(activePage === "wishlist")} title="Workspace">
+            <a href={wishlistHref} className={topLevelItemClass(activePage === "wishlist")} title="Wishlist">
               <FolderOpen aria-hidden="true" className="h-4 w-4 shrink-0" />
-              {!isCollapsed ? <span>Workspace</span> : null}
+              {!isCollapsed ? <span>Wishlist</span> : null}
             </a>
 
             {showTasks ? (

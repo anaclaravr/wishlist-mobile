@@ -136,8 +136,8 @@ export function ButtonSystemPreview() {
     { id: "attachment-1", name: "Brief do projeto.pdf", meta: "PDF · 937 KB" },
   ]);
   const [drawerCheckedValue, setDrawerCheckedValue] = useState(true);
-  const [drawerUrlValue, setDrawerUrlValue] = useState("https://workspace.app/projects/hero");
-  const [drawerEmailValue, setDrawerEmailValue] = useState("time@workspace.app");
+  const [drawerUrlValue, setDrawerUrlValue] = useState("https://wishlist.app/projects/hero");
+  const [drawerEmailValue, setDrawerEmailValue] = useState("time@wishlist.app");
   const [drawerPhoneValue, setDrawerPhoneValue] = useState("+55 11 99999-8888");
   const [drawerCommentValue, setDrawerCommentValue] = useState(
     "Hi @Liz! I checked the results, there are some comments in figma, can you check it now?",
@@ -559,7 +559,7 @@ export function ButtonSystemPreview() {
             items={[
               { label: "Workspace", href: "/admin" },
               { label: "Pages", href: "/admin/pages" },
-              { label: "Workspace" },
+              { label: "Wishlist" },
             ]}
           />
         </div>

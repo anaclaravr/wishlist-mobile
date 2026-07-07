@@ -66,10 +66,10 @@ export async function sendFollowerWelcomeEmail(input: {
     subject: `Voce esta acompanhando ${input.wishlist.title}`,
     html: `
       <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
-        <h1 style="font-size: 22px;">Workspace acompanhado</h1>
+        <h1 style="font-size: 22px;">Wishlist acompanhada</h1>
         <p>Voce agora acompanha <strong>${title}</strong>.</p>
         <p>Use este link para voltar com permissao para marcar itens como adquiridos:</p>
-        <p><a href="${followUrl}" style="color: #0f766e;">Abrir workspace</a></p>
+        <p><a href="${followUrl}" style="color: #0f766e;">Abrir wishlist</a></p>
       </div>
     `,
   });
@@ -111,13 +111,13 @@ export async function sendNewItemEmail(input: {
       return client.emails.send({
         from,
         to: follower.email,
-        subject: `Novo item no workspace: ${input.item.name}`,
+        subject: `Novo item na wishlist: ${input.item.name}`,
         html: `
           <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
             <h1 style="font-size: 22px;">Novo item adicionado</h1>
-            <p><strong>${safeItem}</strong> entrou no workspace <strong>${safeWishlist}</strong>.</p>
+            <p><strong>${safeItem}</strong> entrou na wishlist <strong>${safeWishlist}</strong>.</p>
             <p>Categoria: ${safeCategory}<br />Preco: ${price}</p>
-            <p><a href="${followUrl}" style="color: #0f766e;">Ver workspace</a></p>
+            <p><a href="${followUrl}" style="color: #0f766e;">Ver wishlist</a></p>
           </div>
         `,
       });
