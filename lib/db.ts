@@ -143,7 +143,7 @@ type PersonalItemSuggestionRow = PersonalItemRow & {
   followerEmail: string | null;
 };
 
-function getSql() {
+export function getSql() {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
