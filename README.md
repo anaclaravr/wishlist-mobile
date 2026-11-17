@@ -47,11 +47,26 @@ npm run db:seed
 npm run dev
 ```
 
+## Meu espaço (`/`)
+
+A raiz `/` serve o app "Meu espaço" (`public/espaco.html`, via rewrite em `next.config.ts`):
+wishlist pessoal, metas de leitura e compartilhamento da lista. É um HTML autocontido que conversa
+com estas rotas:
+
+- `POST /api/space/enter` entra com nome + PIN de 4 dígitos (cria o espaço se o nome for novo).
+  O PIN é guardado com scrypt; 5 erros seguidos bloqueiam o nome por 15 minutos.
+- `GET /api/space` / `PUT /api/space` leem e salvam o espaço da sessão (cookie httpOnly `space_session`).
+- `POST /api/space/logout` encerra a sessão.
+- `POST /api/space/link` lê uma página de produto (JSON-LD, meta tags Open Graph e preço) e devolve
+  nome, preço, loja, variação, categoria e foto. Lojas que bloqueiam robôs (ex.: Amazon) caem no
+  preenchimento pela URL, e o usuário confere os campos.
+
+Os dados ficam nas tabelas `spaces` e `space_sessions`, criadas por `npm run db:migrate`.
+
 ## Fluxos principais
 
-- `/` mostra a wishlist principal configurada em `WISHLIST_SLUG`.
+- `/w/[slug]` mostra a wishlist antiga (para a principal, use o slug de `WISHLIST_SLUG`).
 - `/admin/[adminToken]` adiciona, edita, arquiva, restaura e exclui itens, alem de copiar o link publico.
-- `/w/[slug]` continua funcionando como compatibilidade para links antigos.
 - Visitantes informam e-mail para acompanhar; o token fica salvo no navegador e tambem e enviado por e-mail.
 - Somente seguidores com token valido conseguem marcar um item como adquirido.
 - Quem marcou um item como adquirido pode desfazer a marcacao.

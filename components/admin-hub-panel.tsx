@@ -71,7 +71,7 @@ export function AdminHubPanel({
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  const publicPath = useMemo(() => (wishlist.slug === slug ? "/" : `/w/${slug}`), [wishlist.slug, slug]);
+  const publicPath = useMemo(() => `/w/${slug}`, [slug]);
 
   async function refreshProfiles() {
     const response = await fetch("/api/admin/profiles");

@@ -778,6 +778,30 @@ await sql`
   on study_pending_items (wishlist_id, status, due_at)
 `;
 
+await sql`
+  create table if not exists spaces (
+    slug text primary key,
+    name text not null,
+    pin_hash text not null,
+    data jsonb not null default '{}'::jsonb,
+    failed_attempts integer not null default 0,
+    locked_until timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )
+`;
+
+await sql`
+  create table if not exists space_sessions (
+    token_hash text primary key,
+    slug text not null references spaces(slug) on delete cascade,
+    created_at timestamptz not null default now(),
+    last_used_at timestamptz not null default now()
+  )
+`;
+
+await sql`create index if not exists space_sessions_slug_idx on space_sessions (slug)`;
+
 await sql.end();
 
 console.log("Database migrated.");
